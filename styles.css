@@ -14,3 +14,11 @@ body{padding-top:0}
 
 /* Programs and exercise library */
 .tabbar{grid-template-columns:repeat(5,minmax(0,1fr));padding-left:8px;padding-right:8px}.tab small{font-size:8px}.program-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 0;border-bottom:1px solid var(--line)}.program-row:last-of-type{border-bottom:0}.program-row strong{display:block;font-size:13px}.program-row small{display:block;color:var(--muted);font-size:10px;margin-top:4px}.program-actions{display:flex;gap:6px;align-items:center}.program-actions button{padding:9px 10px;font-size:10px}.program-groups{margin-top:12px}.library-group{border-bottom:1px solid var(--line);padding:12px 0}.library-group summary{cursor:pointer;list-style:none;font-size:13px;font-weight:700}.library-group summary::-webkit-details-marker{display:none}.library-group summary span{float:right;color:var(--muted);font-size:11px}.library-item{padding:9px 3px;font-size:12px;color:#d8dbe1;border-bottom:1px solid rgba(255,255,255,.035)}.library-item[hidden]{display:none}.library-group[hidden]{display:none}@media(max-width:370px){.tab small{font-size:7px}.tab span{font-size:18px}.program-actions{flex-direction:column;align-items:stretch}.program-actions button{padding:7px}}
+
+/* Navigation refinement: settings live behind the profile avatar, five destinations stay on one row. */
+.tabbar{grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;padding-left:6px;padding-right:6px}
+.tab{min-width:0}
+.tab small{font-size:clamp(7px,2.15vw,9px);white-space:nowrap;letter-spacing:0}
+#profileBtn{padding:0;overflow:hidden;display:grid;place-items:center;flex-shrink:0}
+#profileBtn img{display:block}
+.danger{color:#ff8b83}
