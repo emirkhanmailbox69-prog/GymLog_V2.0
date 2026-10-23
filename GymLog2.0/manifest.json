@@ -1,0 +1,11 @@
+{
+  "name": "GymLog 2.0",
+  "short_name": "GymLog",
+  "description": "Тренировки, прогресс и GymQuest",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b0c0f",
+  "theme_color": "#0b0c0f",
+  "icons": [{"src":"./assets/icon-app.png","sizes":"512x512","type":"image/png"}]
+}
