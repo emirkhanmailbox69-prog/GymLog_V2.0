@@ -1,0 +1,11 @@
+{
+  "name": "GymLog — Training journal",
+  "short_name": "GymLog",
+  "description": "Личный дневник тренировок и прогресса",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#10110f",
+  "theme_color": "#10110f",
+  "orientation": "portrait"
+}
