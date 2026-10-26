@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Activity, BarChart3, BookOpen, Check, ChevronDown, ChevronUp, CircleUserRound,
-  Clock3, Dumbbell, FileDown, Flame, Home, Plus, Save, ShieldCheck, Trash2,
+  Clock3, Dumbbell, FileDown, Home, Plus, Save, ShieldCheck, Trash2,
   Trophy, X
 } from 'lucide-react';
 import type { ActiveWorkout, AppState, Exercise, Program, SetEntry, Tab, Workout, WorkoutExercise } from './types';
@@ -52,6 +52,15 @@ export default function App() {
   const level = levelFor(xp);
   const currentWorkout = state.activeWorkout;
   const weeklyWorkouts = state.workouts.filter(w => Date.now() - w.endedAt < 7 * 86400000);
+const weeklySets = weeklyWorkouts.reduce((n, w) => n + setCount(w), 0);
+const streak = (() => {
+  if (!state.workouts.length) return 0;
+  const days = new Set(state.workouts.map(w => new Date(w.endedAt).toDateString()));
+  let s = 0;
+  const d = new Date();
+  while (days.has(d.toDateString())) { s++; d.setDate(d.getDate() - 1); }
+  return s;
+})();
   const filteredExercises = useMemo(() => state.exercises.filter(e =>
     `${e.name} ${e.muscle} ${e.equipment}`.toLocaleLowerCase('ru-RU').includes(pickerQuery.toLocaleLowerCase('ru-RU'))
   ), [state.exercises, pickerQuery]);
@@ -191,25 +200,44 @@ export default function App() {
       </header>
 
       <main className="screen" key={tab}>
-        {tab === 'home' && <section>
-          <p className="eyebrow">ТВОЯ ТРЕНИРОВОЧНАЯ СИСТЕМА</p>
-          <h1>Становись<br /><span>сильнее.</span></h1>
-          <p className="intro">Тренировки, история и прогресс — в одном месте.</p>
-          <div className="hero-card">
-            <div className="hero-glow" />
-            <div className="hero-kicker"><Flame size={15} /> СЛЕДУЮЩИЙ ШАГ</div>
-            <h2>{currentWorkout ? 'Тренировка уже идёт' : 'Готов к работе?'}</h2>
-            <p>{currentWorkout ? 'Продолжай с того подхода, на котором остановился.' : 'Запиши рабочие подходы и отслеживай свой прогресс.'}</p>
-            <button className="button button-primary" onClick={() => currentWorkout ? setTab('workout') : startWorkout()}>
-              {currentWorkout ? 'Продолжить тренировку' : 'Начать тренировку'} <span>↗</span>
-            </button>
+                {tab === 'home' && <section>
+          <p className="eyebrow">{localDate(Date.now()).toUpperCase()}</p>
+          <h1>Сводка.</h1>
+          <p className="intro">Прогресс за последние 7 дней.</p>
+
+          <div className="rings-card">
+            <ActivityRings rings={[
+              { percent: weeklyWorkouts.length / 4, color: '#ff6482' },
+              { percent: weeklySets / 50, color: '#d0f477' },
+              { percent: (xp % 250) / 250, color: '#32d4ff' }
+            ]} />
+            <div className="rings-legend">
+              <div className="ring-legend-row">
+                <span className="ring-dot" style={{ background: '#ff6482' }} />
+                <div><b>Тренировки</b><small>{weeklyWorkouts.length} из 4 за неделю</small></div>
+              </div>
+              <div className="ring-legend-row">
+                <span className="ring-dot" style={{ background: '#d0f477' }} />
+                <div><b>Подходы</b><small>{weeklySets} из 50 за неделю</small></div>
+              </div>
+              <div className="ring-legend-row">
+                <span className="ring-dot" style={{ background: '#32d4ff' }} />
+                <div><b>До уровня {level + 1}</b><small>{xp % 250} из 250 XP</small></div>
+              </div>
+            </div>
           </div>
+
+          <button className="button button-primary full-width big-button" onClick={() => currentWorkout ? setTab('workout') : startWorkout()}>
+            {currentWorkout ? 'Продолжить тренировку' : 'Начать тренировку'}
+          </button>
+
           <div className="stats-grid">
-            <Metric label="ТРЕНИРОВОК" value={String(state.workouts.length)} note="за всё время" />
-            <Metric label="ЗА 7 ДНЕЙ" value={String(weeklyWorkouts.length)} note="завершено" />
+            <Metric label="ТРЕНИРОВОК" value={String(state.workouts.length)} note="всего" />
             <Metric label="ОБЪЁМ" value={fmt(state.workouts.reduce((n, w) => n + volume(w), 0))} note="кг × повторы" />
-            <Metric label="GYMQUEST" value={`ур. ${level}`} note={`${xp} XP`} />
+            <Metric label="УРОВЕНЬ" value={String(level)} note={`${xp} XP`} />
+            <Metric label="СЕРИЯ" value={String(streak)} note="дней подряд" />
           </div>
+
           <SectionTitle title="Последние тренировки" action={state.workouts.length ? 'Вся история' : undefined} onAction={() => setTab('history')} />
           {state.workouts.length ? <div className="panel">{state.workouts.slice(0, 3).map(w => <WorkoutRow key={w.id} workout={w} onDelete={() => deleteWorkout(w.id)} />)}</div> : <Empty title="Здесь начнётся твой прогресс" text="Заверши первую тренировку, чтобы увидеть историю и статистику." />}
         </section>}
@@ -334,4 +362,25 @@ function Empty({ title, text }: { title: string; text: string }) {
 }
 function WorkoutRow({ workout, onDelete }: { workout: Workout; onDelete: () => void }) {
   return <div className="workout-row"><div className="row-mark"><Check size={17} /></div><div className="row-content"><b>{workout.name}</b><small>{localDate(workout.endedAt)} · {workout.exercises.length} упражнений</small></div><strong>+{workout.earnedXp} XP</strong><button className="icon-button subtle" aria-label="Удалить тренировку" onClick={onDelete}><Trash2 size={15} /></button></div>;
+}
+function ActivityRings({ rings }: { rings: { percent: number; color: string }[] }) {
+  const stroke = 13;
+  const gap = 5;
+  return (
+    <svg viewBox="0 0 200 200" className="rings-svg" aria-hidden="true">
+      {rings.map((ring, i) => {
+        const r = 82 - i * (stroke + gap);
+        const c = 2 * Math.PI * r;
+        const pct = Math.max(0, Math.min(1, ring.percent || 0));
+        return (
+          <g key={i}>
+            <circle cx="100" cy="100" r={r} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth={stroke} />
+            <circle cx="100" cy="100" r={r} fill="none" stroke={ring.color} strokeWidth={stroke} strokeLinecap="round"
+              strokeDasharray={c} strokeDashoffset={c * (1 - pct)}
+              transform="rotate(-90 100 100)" style={{ transition: 'stroke-dashoffset .6s ease' }} />
+          </g>
+        );
+      })}
+    </svg>
+  );
 }
