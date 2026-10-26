@@ -233,3 +233,52 @@ h3{font:600 16px/1.3 -apple-system,sans-serif;margin-bottom:6px}
 @media (max-width:380px){
   .achievements-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+/* ===== Programs: menu card ===== */
+.menu-card{display:flex;align-items:center;gap:14px;width:100%;padding:16px;background:var(--card);border:0;border-radius:16px;color:var(--text);text-align:left;margin-bottom:12px;transition:transform .15s,background .15s;touch-action:manipulation}
+.menu-card:active{transform:scale(.99);background:var(--card-2)}
+.menu-card-icon{display:grid;place-items:center;width:44px;height:44px;border-radius:12px;background:rgba(208,244,119,.14);color:var(--lime);flex-shrink:0}
+.menu-card-body{flex:1;min-width:0}
+.menu-card-body b{display:block;font-size:15px;font-weight:600}
+.menu-card-body small{display:block;font-size:12px;color:var(--muted);margin-top:3px}
+.menu-card>svg{color:var(--muted);flex-shrink:0}
+
+/* ===== Library screen ===== */
+.back-link{display:inline-flex;align-items:center;gap:4px;border:0;background:none;color:var(--lime);font-size:14px;font-weight:600;padding:6px 0;margin:4px 0 8px;touch-action:manipulation}
+.library-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:14px 0 16px}
+.library-tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:78px;padding:12px 6px;background:var(--card);border:0;border-radius:14px;color:var(--muted);font-size:11px;font-weight:600;text-align:center;line-height:1.25;transition:background .15s,color .15s;touch-action:manipulation}
+.library-tab.active{background:var(--lime);color:#000}
+.library-tab span{display:block}
+
+/* ===== Category list ===== */
+.category-list{display:grid;gap:8px;margin-top:6px}
+.category-block{background:var(--card);border-radius:14px;overflow:hidden}
+.category-header{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:14px 16px;border:0;background:transparent;color:var(--text);text-align:left;cursor:pointer;touch-action:manipulation}
+.category-header>div{min-width:0}
+.category-header b{display:block;font-size:15px;font-weight:600}
+.category-header small{display:block;font-size:12px;color:var(--muted);margin-top:3px}
+.category-header>svg{color:var(--muted);flex-shrink:0}
+.category-exercises{border-top:1px solid var(--line);padding:0 16px}
+.category-exercises .library-row{padding:12px 0;border-bottom:1px solid var(--line)}
+.category-exercises .library-row:last-child{border-bottom:0}
+
+/* ===== Import list ===== */
+.import-list{padding:0 16px}
+.import-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.import-row:last-child{border-bottom:0}
+.import-row input[type="checkbox"]{accent-color:var(--lime);width:18px;height:18px;flex-shrink:0}
+.import-row-content{flex:1;min-width:0;display:flex;align-items:center;gap:10px;justify-content:space-between}
+.import-row-content b{font-size:14px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.import-category{background:var(--card-2);border:0;color:var(--text);border-radius:8px;padding:6px 10px;font-size:12px;outline:none;max-width:150px;flex-shrink:0}
+
+/* ===== Picker custom add ===== */
+.picker-add-custom{background:var(--card-2);border-radius:12px;padding:12px}
+.picker-add-label{font-size:12px;color:var(--muted);margin:0 0 8px;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.picker-add-row{display:flex;gap:8px;align-items:center}
+.picker-add-category{flex:1;min-width:0;background:var(--card);border:0;color:var(--text);border-radius:10px;padding:10px 12px;font-size:13px;outline:none}
+.picker-add-button{display:inline-flex;align-items:center;gap:6px;background:var(--lime);color:#000;border:0;border-radius:10px;padding:10px 14px;font-size:13px;font-weight:600;white-space:nowrap;flex-shrink:0;touch-action:manipulation}
+
+/* ===== Small screens ===== */
+@media(max-width:380px){
+  .library-tab{min-height:72px;padding:10px 4px;font-size:10px}
+  .import-category{max-width:120px}
+}
