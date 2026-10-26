@@ -284,3 +284,10 @@ h3{font:600 16px/1.3 -apple-system,sans-serif;margin-bottom:6px}
 }
 .status-dot.status-active{background:#32d4ff;box-shadow:0 0 8px rgba(50,212,255,.5)}
 .status-dot.status-pending{background:#ffd60a}
+.settings-action{width:100%;display:flex;align-items:center;gap:12px;padding:14px 16px;border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--text);text-align:left;cursor:pointer;-webkit-appearance:none;appearance:none;font:inherit}
+.settings-action>svg{color:var(--lime);flex-shrink:0}
+.settings-action:last-child{border-bottom:0}
+.settings-action span{flex:1;min-width:0}
+.settings-action b,.settings-action small{display:block}
+.settings-action b{font-size:14px;font-weight:600}
+.settings-action small{font-size:11px;color:var(--muted);line-height:1.4;margin-top:3px}
