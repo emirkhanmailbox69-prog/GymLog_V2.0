@@ -1,12 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Activity, Award, BarChart3, BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight,
-  ChevronUp, CircleUserRound, Clock3, Dumbbell, FileDown, Home, Plus, Save,
+  ChevronUp, CircleUserRound, Cloud, Clock3, Dumbbell, FileDown, Home, Plus, Save,
   ShieldCheck, Star, Target, Trash2, Trophy, X, Zap
 } from 'lucide-react';
+import type { User } from 'firebase/auth';
 import type { ActiveWorkout, AppState, Exercise, Program, SetEntry, Tab, Workout, WorkoutExercise } from './types';
 import { loadState, saveState, downloadBackup } from './storage';
-import { firebaseConfigured } from './firebase';
+import {
+  firebaseConfigured, subscribeToAuth, ensureAnonymousAuth,
+  linkAnonymousWithGoogle, logOut
+} from './firebase';
+import { useCloudSync } from './hooks/useCloudSync';
 
 const uid = () => crypto.randomUUID();
 const emptySet = (): SetEntry => ({ id: uid(), weight: '', reps: '', done: false });
@@ -38,6 +43,8 @@ const normalizeMuscle = (m: string) => MUSCLE_MAP[m] || m;
 
 export default function App() {
   const [state, setState] = useState<AppState>(() => loadState());
+  const [user, setUser] = useState<User | null>(null); // <-- Новое состояние
+  const [state, setState] = useState<AppState>(() => loadState());
   const [tab, setTab] = useState<Tab>('home');
   const [toast, setToast] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -58,12 +65,34 @@ export default function App() {
   }, [state]);
 
   useEffect(() => {
+    ensureAnonymousAuth().catch(err => console.error('Anonymous auth error:', err));
+    const unsubscribe = subscribeToAuth(setUser);
+    async function handleLinkGoogle() {
+    try {
+      await linkAnonymousWithGoogle();
+      // После редиректа управление вернётся, getRedirectResult обработается в хуке
+    } catch (error: any) {
+      if (error.code === 'auth/credential-already-in-use') {
+        notify('Этот Google-аккаунт уже используется. Войдите в него, чтобы получить доступ к старым данным.');
+        // Опционально: можно предложить войти через signInWithRedirect
+      } else {
+        notify('Не удалось подключить Google. Попробуйте позже.');
+        console.error('Link error:', error);
+      }
+    }
+  }
+    return unsubscribe;
+  }, []);
+  
+  useEffect(() => {
     if (tab !== 'programs') {
       setProgramsView('list');
       setLibraryTab('browse');
     }
   }, [tab]);
-
+  
+  useCloudSync(user, state, setState);
+  
   function notify(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(''), 2600);
@@ -521,6 +550,7 @@ export default function App() {
           <div className="settings-section">
             <p className="settings-header">Синхронизация</p>
             <div className="settings-group">
+              {/* Локальное сохранение */}
               <div className="setting-row">
                 <div className="setting-icon"><ShieldCheck size={17} /></div>
                 <div>
@@ -530,26 +560,43 @@ export default function App() {
                 <span className="status-dot status-active" title="Активно" />
               </div>
 
-              {firebaseConfigured ? (
-                <div className="setting-row">
-                  <div className="setting-icon"><Activity size={17} /></div>
-                  <div>
-                    <b>Облачная синхронизация</b>
-                    <small>Firebase настроен, но синхронизация ещё не включена.</small>
-                  </div>
-                  <span className="status-dot status-pending" title="Требуется настройка" />
+              {/* Облачная синхронизация */}
+              <div className="setting-row">
+                <div className="setting-icon"><Cloud size={17} /></div>
+                <div>
+                  <b>Облачная синхронизация</b>
+                  <small>
+                    {user
+                      ? user.isAnonymous
+                        ? 'Данные сохраняются в облаке, но только для этого устройства.'
+                        : `Синхронизировано: ${user.email || user.displayName || 'аккаунт Google'}`
+                      : 'Подключение к облаку...'}
+                  </small>
                 </div>
-              ) : (
-                <div className="setting-row">
-                  <div className="setting-icon"><Activity size={17} /></div>
-                  <div>
-                    <b>Облачная синхронизация</b>
-                    <small>Firebase не настроен в этой сборке.</small>
-                  </div>
-                  <span className="status-dot" title="Не настроено" />
-                </div>
-              )}
+                <span className={`status-dot ${
+                  user
+                    ? user.isAnonymous ? 'status-pending' : 'status-active'
+                    : ''
+                }`} title={user ? (user.isAnonymous ? 'Только на этом устройстве' : 'Синхронизировано') : 'Подключение'} />
+              </div>
             </div>
+
+            {/* Кнопка привязки Google, если пользователь анонимный */}
+            {user && user.isAnonymous && (
+              <div className="sync-warning">
+                <p>Прогресс сохраняется только на этом устройстве. Если удалите приложение — данные не восстановятся.</p>
+                <button className="button button-primary full-width" onClick={handleLinkGoogle}>
+                  <Cloud size={17} /> Сохранить прогресс навсегда
+                </button>
+              </div>
+            )}
+
+            {/* Информация для привязанного пользователя */}
+            {user && !user.isAnonymous && (
+              <button className="button button-secondary full-width" onClick={logOut} style={{ marginTop: 12 }}>
+                Выйти из аккаунта
+              </button>
+            )}
           </div>
 
           <div className="settings-section">
