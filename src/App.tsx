@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Activity, Award, BarChart3, BookOpen, Check, ChevronDown, ChevronUp, CircleUserRound,
-  Clock3, Dumbbell, FileDown, Home, Plus, Save, ShieldCheck, Star, Target, Trash2,
-  Trophy, X, Zap
+  Activity, Award, BarChart3, BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight,
+  ChevronUp, CircleUserRound, Clock3, Dumbbell, FileDown, History, Home, Plus, Save,
+  ShieldCheck, Star, Target, Trash2, Trophy, X, Zap
 } from 'lucide-react';
 import type { ActiveWorkout, AppState, Exercise, Program, SetEntry, Tab, Workout, WorkoutExercise } from './types';
 import { loadState, saveState, downloadBackup } from './storage';
@@ -26,22 +26,45 @@ const xpFor = (w: ActiveWorkout) => {
 const levelFor = (xp: number) => Math.floor(xp / 250) + 1;
 const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU');
 
+const CATEGORIES = ['Ноги и ягодицы', 'Спина', 'Грудь', 'Плечи (Дельты)', 'Руки (Бицепс и Трицепс)', 'Пресс и кор'];
+const MUSCLE_MAP: Record<string, string> = {
+  'Ноги': 'Ноги и ягодицы',
+  'Плечи': 'Плечи (Дельты)',
+  'Бицепс': 'Руки (Бицепс и Трицепс)',
+  'Трицепс': 'Руки (Бицепс и Трицепс)',
+  'Корпус': 'Пресс и кор'
+};
+const normalizeMuscle = (m: string) => MUSCLE_MAP[m] || m;
+
 export default function App() {
   const [state, setState] = useState<AppState>(() => loadState());
   const [tab, setTab] = useState<Tab>('home');
   const [toast, setToast] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState('');
+  const [pickerNewCategory, setPickerNewCategory] = useState(CATEGORIES[0]);
   const [programName, setProgramName] = useState('');
   const [programExerciseIds, setProgramExerciseIds] = useState<string[]>([]);
   const [showProgramBuilder, setShowProgramBuilder] = useState(false);
   const [exerciseName, setExerciseName] = useState('');
-  const [exerciseMuscle, setExerciseMuscle] = useState('Грудь');
-  const [showExerciseBuilder, setShowExerciseBuilder] = useState(false);
+  const [exerciseMuscle, setExerciseMuscle] = useState(CATEGORIES[0]);
+
+  const [programsView, setProgramsView] = useState<'list' | 'library'>('list');
+  const [libraryTab, setLibraryTab] = useState<'browse' | 'add' | 'import'>('browse');
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+  const [importCandidates, setImportCandidates] = useState<{ name: string; category: string }[]>([]);
+  const [importChecked, setImportChecked] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!saveState(state)) notify('Не удалось сохранить локально. Экспортируй резервную копию.');
   }, [state]);
+
+  useEffect(() => {
+    if (tab !== 'programs') {
+      setProgramsView('list');
+      setLibraryTab('browse');
+    }
+  }, [tab]);
 
   function notify(message: string) {
     setToast(message);
@@ -52,18 +75,32 @@ export default function App() {
   const level = levelFor(xp);
   const currentWorkout = state.activeWorkout;
   const weeklyWorkouts = state.workouts.filter(w => Date.now() - w.endedAt < 7 * 86400000);
-const weeklySets = weeklyWorkouts.reduce((n, w) => n + setCount(w), 0);
-const streak = (() => {
-  if (!state.workouts.length) return 0;
-  const days = new Set(state.workouts.map(w => new Date(w.endedAt).toDateString()));
-  let s = 0;
-  const d = new Date();
-  while (days.has(d.toDateString())) { s++; d.setDate(d.getDate() - 1); }
-  return s;
-})();
+  const weeklySets = weeklyWorkouts.reduce((n, w) => n + setCount(w), 0);
+  const streak = (() => {
+    if (!state.workouts.length) return 0;
+    const days = new Set(state.workouts.map(w => new Date(w.endedAt).toDateString()));
+    let s = 0;
+    const d = new Date();
+    while (days.has(d.toDateString())) { s++; d.setDate(d.getDate() - 1); }
+    return s;
+  })();
+
   const filteredExercises = useMemo(() => state.exercises.filter(e =>
     `${e.name} ${e.muscle} ${e.equipment}`.toLocaleLowerCase('ru-RU').includes(pickerQuery.toLocaleLowerCase('ru-RU'))
   ), [state.exercises, pickerQuery]);
+
+  const groupedExercises = useMemo(() => {
+    const groups: Record<string, Exercise[]> = {};
+    for (const e of state.exercises) {
+      const cat = normalizeMuscle(e.muscle);
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(e);
+    }
+    for (const cat in groups) {
+      groups[cat].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    }
+    return groups;
+  }, [state.exercises]);
 
   function patchActive(updater: (active: ActiveWorkout) => ActiveWorkout) {
     setState(s => s.activeWorkout ? { ...s, activeWorkout: updater(s.activeWorkout) } : s);
@@ -127,17 +164,69 @@ const streak = (() => {
     setProgramName('');
     setProgramExerciseIds([]);
     setShowProgramBuilder(false);
-    notify('Программа сохранена отдельно от текущей тренировки.');
+    notify('Программа сохранена.');
   }
 
   function addCustomExercise() {
     const name = exerciseName.trim();
-    if (!name) return;
+    if (!name) { notify('Введи название упражнения.'); return; }
+    if (state.exercises.some(e => e.name.toLowerCase() === name.toLowerCase())) {
+      notify('Такое упражнение уже есть в библиотеке.');
+      return;
+    }
     const exercise: Exercise = { id: uid(), name, muscle: exerciseMuscle, equipment: 'Пользовательское' };
     setState(s => ({ ...s, exercises: [...s.exercises, exercise] }));
     setExerciseName('');
-    setShowExerciseBuilder(false);
+    setExpandedCategories(prev => ({ ...prev, [exerciseMuscle]: true }));
     notify('Упражнение добавлено в библиотеку.');
+  }
+
+  function addCustomInPicker(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const existing = state.exercises.find(e => e.name.toLowerCase() === trimmed.toLowerCase());
+    if (existing) {
+      addExerciseToWorkout(existing);
+      return;
+    }
+    const exercise: Exercise = { id: uid(), name: trimmed, muscle: pickerNewCategory, equipment: 'Пользовательское' };
+    setState(s => ({ ...s, exercises: [...s.exercises, exercise] }));
+    addExerciseToWorkout(exercise);
+  }
+
+  function toggleCategory(cat: string) {
+    setExpandedCategories(prev => ({ ...prev, [cat]: !prev[cat] }));
+  }
+
+  function computeImportCandidates() {
+    const libraryNames = new Set(state.exercises.map(e => e.name.toLowerCase().trim()));
+    const seen = new Set<string>();
+    const candidates: { name: string; category: string }[] = [];
+    for (const w of state.workouts) {
+      for (const ex of w.exercises) {
+        const key = ex.name.toLowerCase().trim();
+        if (seen.has(key) || libraryNames.has(key)) continue;
+        seen.add(key);
+        candidates.push({ name: ex.name, category: 'Другое' });
+      }
+    }
+    setImportCandidates(candidates);
+    setImportChecked(Object.fromEntries(candidates.map(c => [c.name, true])));
+  }
+
+  function confirmImport() {
+    const libraryNames = new Set(state.exercises.map(e => e.name.toLowerCase().trim()));
+    const toAdd = importCandidates.filter(c => importChecked[c.name] && !libraryNames.has(c.name.toLowerCase().trim()));
+    if (toAdd.length === 0) { notify('Нечего добавлять.'); return; }
+    const newExercises: Exercise[] = toAdd.map(c => ({
+      id: uid(),
+      name: c.name,
+      muscle: c.category,
+      equipment: 'Пользовательское'
+    }));
+    setState(s => ({ ...s, exercises: [...s.exercises, ...newExercises] }));
+    setLibraryTab('browse');
+    notify(`Добавлено ${toAdd.length} упражнений.`);
   }
 
   function exportData() {
@@ -169,14 +258,8 @@ const streak = (() => {
   }
 
   function updateProfile(name: string, bodyWeight: string) {
-  setState(s => ({
-    ...s,
-    profile: {
-      name,
-      bodyWeight
-    }
-  }));
-}
+    setState(s => ({ ...s, profile: { name, bodyWeight } }));
+  }
 
   const navItems: { id: Tab; label: string; icon: typeof Home }[] = [
     { id: 'home', label: 'Главная', icon: Home },
@@ -185,6 +268,11 @@ const streak = (() => {
     { id: 'history', label: 'История', icon: BarChart3 },
     { id: 'quest', label: 'GymQuest', icon: Trophy },
     { id: 'profile', label: 'Профиль', icon: CircleUserRound }
+  ];
+
+  const orderedCategories = [
+    ...CATEGORIES,
+    ...Object.keys(groupedExercises).filter(c => !CATEGORIES.includes(c))
   ];
 
   return (
@@ -200,7 +288,7 @@ const streak = (() => {
       </header>
 
       <main className="screen" key={tab}>
-                {tab === 'home' && <section>
+        {tab === 'home' && <section>
           <p className="eyebrow">{localDate(Date.now()).toUpperCase()}</p>
           <h1>Сводка.</h1>
           <p className="intro">Прогресс за последние 7 дней.</p>
@@ -281,19 +369,131 @@ const streak = (() => {
           </>}
         </section>}
 
-        {tab === 'programs' && <section>
-          <p className="eyebrow">ПЛАНИРОВАНИЕ</p><h1>Мои программы.</h1><p className="intro">Собери шаблон один раз и запускай его, когда понадобится.</p>
+        {tab === 'programs' && programsView === 'list' && <section>
+          <p className="eyebrow">ПЛАНИРОВАНИЕ</p>
+          <h1>Мои программы.</h1>
+          <p className="intro">Собери шаблон один раз и запускай его, когда понадобится.</p>
+
+          <button className="menu-card" onClick={() => { setProgramsView('library'); setLibraryTab('browse'); }}>
+            <div className="menu-card-icon"><BookOpen size={22} /></div>
+            <div className="menu-card-body">
+              <b>Библиотека упражнений</b>
+              <small>{state.exercises.length} упражнений · {Object.keys(groupedExercises).length} категорий</small>
+            </div>
+            <ChevronRight size={20} />
+          </button>
+
           <button className="button button-primary full-width" onClick={() => setShowProgramBuilder(v => !v)}><Plus size={17} /> Создать программу</button>
           {showProgramBuilder && <div className="panel builder">
             <label className="field-label">Название программы<input className="field" placeholder="Например, Верх тела A" value={programName} onChange={e => setProgramName(e.target.value)} /></label>
             <p className="eyebrow">ВЫБЕРИ УПРАЖНЕНИЯ</p>
-            <div className="selection-list">{state.exercises.map(e => <label key={e.id} className="selection-row"><input type="checkbox" checked={programExerciseIds.includes(e.id)} onChange={event => setProgramExerciseIds(ids => event.target.checked ? [...ids, e.id] : ids.filter(id => id !== e.id))} /><span>{e.name}<small>{e.muscle}</small></span></label>)}</div>
+            <div className="selection-list">{state.exercises.map(e => <label key={e.id} className="selection-row"><input type="checkbox" checked={programExerciseIds.includes(e.id)} onChange={event => setProgramExerciseIds(ids => event.target.checked ? [...ids, e.id] : ids.filter(id => id !== e.id))} /><span>{e.name}<small>{normalizeMuscle(e.muscle)}</small></span></label>)}</div>
             <button className="button button-primary full-width" onClick={addProgram}><Save size={16} /> Сохранить программу</button>
           </div>}
           {state.programs.length ? <div className="program-list">{state.programs.map(p => <article className="panel program-card" key={p.id}><div className="program-icon"><BookOpen size={20} /></div><div className="program-main"><h3>{p.name}</h3><p>{p.exerciseIds.length} упражнений · создана {localDate(p.createdAt)}</p><div className="program-exercises">{state.exercises.filter(e => p.exerciseIds.includes(e.id)).slice(0, 4).map(e => e.name).join(' · ')}</div><button className="button button-primary" onClick={() => startWorkout(p)}>Начать программу ↗</button></div><button className="icon-button subtle" aria-label="Удалить программу" onClick={() => { if (window.confirm(`Удалить программу «${p.name}»?`)) setState(s => ({ ...s, programs: s.programs.filter(x => x.id !== p.id) })); }}><Trash2 size={16} /></button></article>)}</div> : <Empty title="Программ пока нет" text="Создай шаблон. Он не изменит текущую тренировку, пока ты сам его не запустишь." />}
-          <SectionTitle title="Библиотека упражнений" action="Добавить" onAction={() => setShowExerciseBuilder(v => !v)} />
-          {showExerciseBuilder && <div className="panel builder"><label className="field-label">Название<input className="field" value={exerciseName} onChange={e => setExerciseName(e.target.value)} placeholder="Новое упражнение" /></label><label className="field-label">Группа мышц<select className="field" value={exerciseMuscle} onChange={e => setExerciseMuscle(e.target.value)}>{['Грудь','Спина','Плечи','Бицепс','Трицепс','Ноги','Корпус','Кардио','Другое'].map(m => <option key={m}>{m}</option>)}</select></label><button className="button button-primary full-width" onClick={addCustomExercise}>Сохранить упражнение</button></div>}
-          <div className="panel library-list">{state.exercises.map(e => <div className="library-row" key={e.id}><div><b>{e.name}</b><small>{e.muscle} · {e.equipment}</small></div><button className="icon-button subtle" aria-label={`Удалить ${e.name}`} onClick={() => { if (window.confirm(`Удалить упражнение «${e.name}» из библиотеки?`)) setState(s => ({ ...s, exercises: s.exercises.filter(x => x.id !== e.id), programs: s.programs.map(p => ({ ...p, exerciseIds: p.exerciseIds.filter(id => id !== e.id) })) })); }}><Trash2 size={15} /></button></div>)}</div>
+        </section>}
+
+        {tab === 'programs' && programsView === 'library' && <section>
+          <button className="back-link" onClick={() => setProgramsView('list')}>
+            <ChevronLeft size={18} /> Программы
+          </button>
+          <h1>Библиотека.</h1>
+          <p className="intro">Упражнения для тренировок и программ.</p>
+
+          <div className="library-tabs">
+            <button className={`library-tab ${libraryTab === 'browse' ? 'active' : ''}`} onClick={() => setLibraryTab('browse')}>
+              <BookOpen size={20} /><span>Библиотека упражнений</span>
+            </button>
+            <button className={`library-tab ${libraryTab === 'add' ? 'active' : ''}`} onClick={() => setLibraryTab('add')}>
+              <Plus size={20} /><span>Добавить своё</span>
+            </button>
+            <button className={`library-tab ${libraryTab === 'import' ? 'active' : ''}`} onClick={() => { computeImportCandidates(); setLibraryTab('import'); }}>
+              <History size={20} /><span>Из истории</span>
+            </button>
+          </div>
+
+          {libraryTab === 'browse' && (
+            <div className="category-list">
+              {state.exercises.length === 0 && <Empty title="Библиотека пуста" text="Добавь упражнения или импортируй из истории." />}
+              {orderedCategories.filter(cat => (groupedExercises[cat]?.length || 0) > 0).map(cat => {
+                const exercises = groupedExercises[cat] || [];
+                const expanded = expandedCategories[cat] ?? false;
+                return (
+                  <div className="category-block" key={cat}>
+                    <button className="category-header" onClick={() => toggleCategory(cat)}>
+                      <div>
+                        <b>{cat}</b>
+                        <small>{exercises.length} упражнений</small>
+                      </div>
+                      {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                    </button>
+                    {expanded && <div className="category-exercises">
+                      {exercises.map(e => (
+                        <div className="library-row" key={e.id}>
+                          <div>
+                            <b>{e.name}</b>
+                            <small>{e.equipment}</small>
+                          </div>
+                          <button className="icon-button subtle" aria-label={`Удалить ${e.name}`} onClick={() => {
+                            if (window.confirm(`Удалить упражнение «${e.name}» из библиотеки?`)) {
+                              setState(s => ({ ...s, exercises: s.exercises.filter(x => x.id !== e.id), programs: s.programs.map(p => ({ ...p, exerciseIds: p.exerciseIds.filter(id => id !== e.id) })) }));
+                              notify('Упражнение удалено.');
+                            }
+                          }}><Trash2 size={15} /></button>
+                        </div>
+                      ))}
+                    </div>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {libraryTab === 'add' && (
+            <div className="panel builder">
+              <label className="field-label">Название упражнения
+                <input className="field" value={exerciseName} onChange={e => setExerciseName(e.target.value)} placeholder="Например, Тяга к поясу" maxLength={60} />
+              </label>
+              <label className="field-label">Категория
+                <select className="field" value={exerciseMuscle} onChange={e => setExerciseMuscle(e.target.value)}>
+                  {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                </select>
+              </label>
+              <button className="button button-primary full-width" onClick={addCustomExercise}><Plus size={16} /> Добавить в библиотеку</button>
+            </div>
+          )}
+
+          {libraryTab === 'import' && (
+            <div>
+              {importCandidates.length === 0 ? (
+                <Empty title="Новых упражнений нет" text="Все упражнения из истории уже есть в библиотеке." />
+              ) : (
+                <>
+                  <p className="intro">Найдено {importCandidates.length} новых упражнений из истории. Выбери, какие добавить, и укажи категорию.</p>
+                  <div className="panel import-list">
+                    {importCandidates.map(c => (
+                      <div className="import-row" key={c.name}>
+                        <input type="checkbox" checked={importChecked[c.name] || false} onChange={e => setImportChecked(prev => ({ ...prev, [c.name]: e.target.checked }))} />
+                        <div className="import-row-content">
+                          <b>{c.name}</b>
+                          <select className="import-category" value={c.category} onChange={e => {
+                            const newCat = e.target.value;
+                            setImportCandidates(prev => prev.map(x => x.name === c.name ? { ...x, category: newCat } : x));
+                          }}>
+                            {CATEGORIES.map(cat => <option key={cat}>{cat}</option>)}
+                            <option>Другое</option>
+                          </select>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <button className="button button-primary full-width" onClick={confirmImport}>
+                    <Check size={16} /> Добавить выбранные ({Object.values(importChecked).filter(Boolean).length})
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </section>}
 
         {tab === 'history' && <section>
@@ -303,7 +503,7 @@ const streak = (() => {
           {state.workouts.length ? <div className="history-list">{state.workouts.map(w => <article className="panel history-card" key={w.id}><div className="history-top"><div><h3>{w.name}</h3><p>{localDate(w.endedAt)} · {durationMinutes(w.startedAt, w.endedAt)} мин</p></div><button className="icon-button subtle" aria-label="Удалить тренировку" onClick={() => deleteWorkout(w.id)}><Trash2 size={16} /></button></div><div className="history-metrics"><span><Dumbbell size={14} /> {w.exercises.length} упр.</span><span><Check size={14} /> {setCount(w)} подходов</span><span><Activity size={14} /> {fmt(volume(w))} кг</span><strong>+{w.earnedXp} XP</strong></div><details><summary>Упражнения и подходы</summary>{w.exercises.map(e => <div className="history-exercise" key={e.id}><b>{e.name}</b><span>{e.sets.filter(s => s.done).map(s => `${s.weight || 0} кг × ${s.reps || 0}`).join(' · ') || 'Нет отмеченных подходов'}</span></div>)}</details></article>)}</div> : <Empty title="История пока пуста" text="Заверши первую тренировку. Она появится здесь вместе с деталями подходов." />}
         </section>}
 
-                {tab === 'quest' && <section>
+        {tab === 'quest' && <section>
           <p className="eyebrow">ПРОГРЕСС И НАГРАДЫ</p>
           <h1>Награды.</h1>
           <p className="intro">Достижения открываются автоматически по мере тренировок.</p>
@@ -345,7 +545,7 @@ const streak = (() => {
           </div>
         </section>}
 
-                {tab === 'profile' && <section>
+        {tab === 'profile' && <section>
           <p className="eyebrow">ТВОИ ДАННЫЕ</p>
           <h1>Профиль.</h1>
 
@@ -422,10 +622,44 @@ const streak = (() => {
       </main>
 
       <nav className="tabbar" aria-label="Основная навигация">
-        {navItems.map(item => { const Icon = item.icon; return <button key={item.id} className={`tab ${tab === item.id ? 'active' : ''}`} onClick={() => setTab(item.id)}><Icon size={19} strokeWidth={tab === item.id ? 2.4 : 1.8} /><span>{item.label}</span></button>; })}
+        {navItems.map(item => {
+          const Icon = item.icon;
+          const isActive = tab === item.id;
+          return <button
+            key={item.id}
+            className={`tab ${isActive ? 'active' : ''}`}
+            onClick={() => {
+              if (item.id === 'programs' && tab === 'programs' && programsView === 'library') {
+                setProgramsView('list');
+                setLibraryTab('browse');
+                return;
+              }
+              setTab(item.id);
+            }}
+          >
+            <Icon size={19} strokeWidth={isActive ? 2.4 : 1.8} /><span>{item.label}</span>
+          </button>;
+        })}
       </nav>
 
-      {pickerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setPickerOpen(false); }}><section className="picker-modal" role="dialog" aria-modal="true" aria-labelledby="picker-title"><div className="modal-head"><div><p className="eyebrow">БИБЛИОТЕКА</p><h2 id="picker-title">Добавить упражнение</h2></div><button className="icon-button" onClick={() => setPickerOpen(false)} aria-label="Закрыть"><X size={20} /></button></div><input className="field" autoFocus placeholder="Поиск упражнения или группы мышц" value={pickerQuery} onChange={e => setPickerQuery(e.target.value)} /><div className="picker-list">{filteredExercises.map(e => <button key={e.id} className="picker-row" onClick={() => addExerciseToWorkout(e)}><span><b>{e.name}</b><small>{e.muscle} · {e.equipment}</small></span><Plus size={18} /></button>)}{filteredExercises.length === 0 && <Empty title="Ничего не найдено" text="Измени поисковый запрос или добавь упражнение в библиотеку." />}</div></section></div>}
+      {pickerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setPickerOpen(false); }}>
+        <section className="picker-modal" role="dialog" aria-modal="true" aria-labelledby="picker-title">
+          <div className="modal-head"><div><p className="eyebrow">БИБЛИОТЕКА</p><h2 id="picker-title">Добавить упражнение</h2></div><button className="icon-button" onClick={() => setPickerOpen(false)} aria-label="Закрыть"><X size={20} /></button></div>
+          <input className="field" autoFocus placeholder="Поиск или новое название" value={pickerQuery} onChange={e => setPickerQuery(e.target.value)} />
+          {pickerQuery.trim() && !filteredExercises.some(e => e.name.toLowerCase() === pickerQuery.toLowerCase().trim()) && (
+            <div className="picker-add-custom">
+              <p className="picker-add-label">Нет в библиотеке? Добавить «{pickerQuery.trim()}»</p>
+              <div className="picker-add-row">
+                <select className="picker-add-category" value={pickerNewCategory} onChange={e => setPickerNewCategory(e.target.value)}>
+                  {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                </select>
+                <button className="picker-add-button" onClick={() => addCustomInPicker(pickerQuery)}><Plus size={16} /> Добавить</button>
+              </div>
+            </div>
+          )}
+          <div className="picker-list">{filteredExercises.map(e => <button key={e.id} className="picker-row" onClick={() => addExerciseToWorkout(e)}><span><b>{e.name}</b><small>{normalizeMuscle(e.muscle)} · {e.equipment}</small></span><Plus size={18} /></button>)}{filteredExercises.length === 0 && <Empty title="Ничего не найдено" text="Введи название — можно добавить как своё упражнение." />}</div>
+        </section>
+      </div>}
 
       {toast && <div className="toast" role="status">{toast}</div>}
     </div>
