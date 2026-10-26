@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Activity, Award, BarChart3, BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight,
-  ChevronUp, CircleUserRound, Clock3, Dumbbell, FileDown, History, Home, Plus, Save,
+  ChevronUp, CircleUserRound, Clock3, Dumbbell, FileDown, Home, Plus, Save,
   ShieldCheck, Star, Target, Trash2, Trophy, X, Zap
 } from 'lucide-react';
 import type { ActiveWorkout, AppState, Exercise, Program, SetEntry, Tab, Workout, WorkoutExercise } from './types';
@@ -50,10 +50,8 @@ export default function App() {
   const [exerciseMuscle, setExerciseMuscle] = useState(CATEGORIES[0]);
 
   const [programsView, setProgramsView] = useState<'list' | 'library'>('list');
-  const [libraryTab, setLibraryTab] = useState<'browse' | 'add' | 'import'>('browse');
+  const [libraryTab, setLibraryTab] = useState<'browse' | 'add'>('browse');
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
-  const [importCandidates, setImportCandidates] = useState<{ name: string; category: string }[]>([]);
-  const [importChecked, setImportChecked] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!saveState(state)) notify('Не удалось сохранить локально. Экспортируй резервную копию.');
@@ -196,37 +194,6 @@ export default function App() {
 
   function toggleCategory(cat: string) {
     setExpandedCategories(prev => ({ ...prev, [cat]: !prev[cat] }));
-  }
-
-  function computeImportCandidates() {
-    const libraryNames = new Set(state.exercises.map(e => e.name.toLowerCase().trim()));
-    const seen = new Set<string>();
-    const candidates: { name: string; category: string }[] = [];
-    for (const w of state.workouts) {
-      for (const ex of w.exercises) {
-        const key = ex.name.toLowerCase().trim();
-        if (seen.has(key) || libraryNames.has(key)) continue;
-        seen.add(key);
-        candidates.push({ name: ex.name, category: 'Другое' });
-      }
-    }
-    setImportCandidates(candidates);
-    setImportChecked(Object.fromEntries(candidates.map(c => [c.name, true])));
-  }
-
-  function confirmImport() {
-    const libraryNames = new Set(state.exercises.map(e => e.name.toLowerCase().trim()));
-    const toAdd = importCandidates.filter(c => importChecked[c.name] && !libraryNames.has(c.name.toLowerCase().trim()));
-    if (toAdd.length === 0) { notify('Нечего добавлять.'); return; }
-    const newExercises: Exercise[] = toAdd.map(c => ({
-      id: uid(),
-      name: c.name,
-      muscle: c.category,
-      equipment: 'Пользовательское'
-    }));
-    setState(s => ({ ...s, exercises: [...s.exercises, ...newExercises] }));
-    setLibraryTab('browse');
-    notify(`Добавлено ${toAdd.length} упражнений.`);
   }
 
   function exportData() {
@@ -406,10 +373,6 @@ export default function App() {
             </button>
             <button className={`library-tab ${libraryTab === 'add' ? 'active' : ''}`} onClick={() => setLibraryTab('add')}>
               <Plus size={20} /><span>Добавить своё</span>
-            </button>
-            <button className={`library-tab ${libraryTab === 'import' ? 'active' : ''}`} onClick={() => { computeImportCandidates(); setLibraryTab('import'); }}>
-              <History size={20} /><span>Из истории</span>
-            </button>
           </div>
 
           {libraryTab === 'browse' && (
@@ -463,37 +426,6 @@ export default function App() {
             </div>
           )}
 
-          {libraryTab === 'import' && (
-            <div>
-              {importCandidates.length === 0 ? (
-                <Empty title="Новых упражнений нет" text="Все упражнения из истории уже есть в библиотеке." />
-              ) : (
-                <>
-                  <p className="intro">Найдено {importCandidates.length} новых упражнений из истории. Выбери, какие добавить, и укажи категорию.</p>
-                  <div className="panel import-list">
-                    {importCandidates.map(c => (
-                      <div className="import-row" key={c.name}>
-                        <input type="checkbox" checked={importChecked[c.name] || false} onChange={e => setImportChecked(prev => ({ ...prev, [c.name]: e.target.checked }))} />
-                        <div className="import-row-content">
-                          <b>{c.name}</b>
-                          <select className="import-category" value={c.category} onChange={e => {
-                            const newCat = e.target.value;
-                            setImportCandidates(prev => prev.map(x => x.name === c.name ? { ...x, category: newCat } : x));
-                          }}>
-                            {CATEGORIES.map(cat => <option key={cat}>{cat}</option>)}
-                            <option>Другое</option>
-                          </select>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <button className="button button-primary full-width" onClick={confirmImport}>
-                    <Check size={16} /> Добавить выбранные ({Object.values(importChecked).filter(Boolean).length})
-                  </button>
-                </>
-              )}
-            </div>
-          )}
         </section>}
 
         {tab === 'history' && <section>
