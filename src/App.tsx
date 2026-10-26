@@ -43,8 +43,7 @@ const normalizeMuscle = (m: string) => MUSCLE_MAP[m] || m;
 
 export default function App() {
   const [state, setState] = useState<AppState>(() => loadState());
-  const [user, setUser] = useState<User | null>(null); // <-- Новое состояние
-  const [state, setState] = useState<AppState>(() => loadState());
+  const [user, setUser] = useState<User | null>(null);
   const [tab, setTab] = useState<Tab>('home');
   const [toast, setToast] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -67,35 +66,44 @@ export default function App() {
   useEffect(() => {
     ensureAnonymousAuth().catch(err => console.error('Anonymous auth error:', err));
     const unsubscribe = subscribeToAuth(setUser);
-    async function handleLinkGoogle() {
-    try {
-      await linkAnonymousWithGoogle();
-      // После редиректа управление вернётся, getRedirectResult обработается в хуке
-    } catch (error: any) {
-      if (error.code === 'auth/credential-already-in-use') {
-        notify('Этот Google-аккаунт уже используется. Войдите в него, чтобы получить доступ к старым данным.');
-        // Опционально: можно предложить войти через signInWithRedirect
-      } else {
-        notify('Не удалось подключить Google. Попробуйте позже.');
-        console.error('Link error:', error);
-      }
-    }
-  }
     return unsubscribe;
   }, []);
-  
+
+  useCloudSync(user, state, setState);
+
   useEffect(() => {
     if (tab !== 'programs') {
       setProgramsView('list');
       setLibraryTab('browse');
     }
   }, [tab]);
-  
-  useCloudSync(user, state, setState);
-  
+
   function notify(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(''), 2600);
+  }
+
+  async function handleLinkGoogle() {
+    try {
+      await linkAnonymousWithGoogle();
+    } catch (error: unknown) {
+      const code = (error as { code?: string })?.code;
+      if (code === 'auth/credential-already-in-use') {
+        notify('Этот Google-аккаунт уже используется. Войдите в него, чтобы получить доступ к старым данным.');
+      } else {
+        notify('Не удалось подключить Google. Попробуйте позже.');
+        console.error('Link error:', error);
+      }
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      await logOut();
+      notify('Вы вышли из аккаунта.');
+    } catch {
+      notify('Ошибка выхода.');
+    }
   }
 
   const xp = totalXp(state.workouts);
@@ -550,7 +558,6 @@ export default function App() {
           <div className="settings-section">
             <p className="settings-header">Синхронизация</p>
             <div className="settings-group">
-              {/* Локальное сохранение */}
               <div className="setting-row">
                 <div className="setting-icon"><ShieldCheck size={17} /></div>
                 <div>
@@ -560,40 +567,44 @@ export default function App() {
                 <span className="status-dot status-active" title="Активно" />
               </div>
 
-              {/* Облачная синхронизация */}
-              <div className="setting-row">
-                <div className="setting-icon"><Cloud size={17} /></div>
-                <div>
-                  <b>Облачная синхронизация</b>
-                  <small>
-                    {user
-                      ? user.isAnonymous
-                        ? 'Данные сохраняются в облаке, но только для этого устройства.'
-                        : `Синхронизировано: ${user.email || user.displayName || 'аккаунт Google'}`
-                      : 'Подключение к облаку...'}
-                  </small>
+              {firebaseConfigured ? (
+                <div className="setting-row">
+                  <div className="setting-icon"><Cloud size={17} /></div>
+                  <div>
+                    <b>Облачная синхронизация</b>
+                    <small>
+                      {user
+                        ? user.isAnonymous
+                          ? 'Данные сохраняются в облаке, но только для этого устройства.'
+                          : `Синхронизировано: ${user.email || user.displayName || 'аккаунт Google'}`
+                        : 'Подключение к облаку…'}
+                    </small>
+                  </div>
+                  <span className={`status-dot ${user ? (user.isAnonymous ? 'status-pending' : 'status-active') : ''}`} title={user ? (user.isAnonymous ? 'Только на этом устройстве' : 'Синхронизировано') : 'Подключение'} />
                 </div>
-                <span className={`status-dot ${
-                  user
-                    ? user.isAnonymous ? 'status-pending' : 'status-active'
-                    : ''
-                }`} title={user ? (user.isAnonymous ? 'Только на этом устройстве' : 'Синхронизировано') : 'Подключение'} />
-              </div>
+              ) : (
+                <div className="setting-row">
+                  <div className="setting-icon"><Cloud size={17} /></div>
+                  <div>
+                    <b>Облачная синхронизация</b>
+                    <small>Firebase не настроен.</small>
+                  </div>
+                  <span className="status-dot" />
+                </div>
+              )}
             </div>
 
-            {/* Кнопка привязки Google, если пользователь анонимный */}
             {user && user.isAnonymous && (
               <div className="sync-warning">
-                <p>Прогресс сохраняется только на этом устройстве. Если удалите приложение — данные не восстановятся.</p>
+                <p>Прогресс сохранён только на этом устройстве. Если удалить приложение — данные не восстановятся.</p>
                 <button className="button button-primary full-width" onClick={handleLinkGoogle}>
                   <Cloud size={17} /> Сохранить прогресс навсегда
                 </button>
               </div>
             )}
 
-            {/* Информация для привязанного пользователя */}
             {user && !user.isAnonymous && (
-              <button className="button button-secondary full-width" onClick={logOut} style={{ marginTop: 12 }}>
+              <button className="button button-secondary full-width" onClick={handleLogout} style={{ marginTop: 12 }}>
                 Выйти из аккаунта
               </button>
             )}
@@ -614,7 +625,7 @@ export default function App() {
             </div>
           </div>
 
-          <div className="notice">Локальное сохранение не заменяет резервную копию. Для восстановления после смены телефона нужно подключить и проверить Firebase. В этой сборке облачная синхронизация ещё не включена.</div>
+          <div className="notice">Локальное сохранение не заменяет резервную копию. Для восстановления после смены телефона нужно привязать Google-аккаунт.</div>
         </section>}
       </main>
 
