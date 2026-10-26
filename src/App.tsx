@@ -373,6 +373,7 @@ export default function App() {
             </button>
             <button className={`library-tab ${libraryTab === 'add' ? 'active' : ''}`} onClick={() => setLibraryTab('add')}>
               <Plus size={20} /><span>Добавить своё</span>
+              </button>
           </div>
 
           {libraryTab === 'browse' && (
