@@ -160,8 +160,14 @@ export default function App() {
   }
 
   function updateProfile(name: string, bodyWeight: string) {
-    setState(s => ({ ...s, profile: { name: name.trim() || 'Атлет', bodyWeight } }));
-  }
+  setState(s => ({
+    ...s,
+    profile: {
+      name,
+      bodyWeight
+    }
+  }));
+}
 
   const navItems: { id: Tab; label: string; icon: typeof Home }[] = [
     { id: 'home', label: 'Главная', icon: Home },
@@ -277,7 +283,16 @@ export default function App() {
 
         {tab === 'profile' && <section>
           <p className="eyebrow">ТВОИ ДАННЫЕ</p><h1>Профиль.</h1><p className="intro">Настройки и инструменты сохранения.</p>
-          <div className="panel profile-panel"><div className="profile-avatar">{(state.profile.name.trim()[0] || 'А').toLocaleUpperCase('ru-RU')}</div><label className="field-label">Имя<input className="field" value={state.profile.name} onChange={e => updateProfile(e.target.value, state.profile.bodyWeight)} maxLength={40} /></label><label className="field-label">Вес тела, кг<input className="field" type="number" min="0" step="0.1" placeholder="Необязательно" value={state.profile.bodyWeight} onChange={e => updateProfile(state.profile.name, e.target.value)} /></label></div>
+          <label className="field-label">
+  Имя
+  <input
+    className="field"
+    value={state.profile.name}
+    onChange={e => updateProfile(e.target.value, state.profile.bodyWeight)}
+    onBlur={() => updateProfile(state.profile.name.trim() || 'Атлет', state.profile.bodyWeight)}
+    maxLength={40}
+  />
+</label>
           <SectionTitle title="Данные и безопасность" />
           <div className="panel settings-list"><div className="setting-row"><div className="setting-icon"><ShieldCheck size={18} /></div><div><b>Локальное автосохранение</b><small>Сохраняет изменения на этом устройстве.</small></div><span className="status-dot" /></div><div className="setting-row"><div className="setting-icon"><Activity size={18} /></div><div><b>Облачная синхронизация</b><small>{firebaseConfigured ? 'Firebase настроен, синхронизацию нужно подключить и проверить.' : 'Firebase пока не настроен в этой сборке.'}</small></div><span className={`status-dot ${firebaseConfigured ? 'status-pending' : ''}`} /></div><button className="setting-action" onClick={exportData}><FileDown size={18} /><span><b>Экспортировать JSON</b><small>Независимая резервная копия тренировок.</small></span></button><label className="setting-action"><Save size={18} /><span><b>Импортировать JSON</b><small>Восстановить данные из резервной копии.</small></span><input type="file" accept=".json,application/json" hidden onChange={e => importData(e.target.files?.[0])} /></label></div>
           <div className="notice">Важно: локальное сохранение не заменяет резервную копию. Для восстановления после смены телефона нужно подключить и проверить постоянный вход Firebase. В этой стартовой сборке облачная синхронизация ещё не включена.</div>
