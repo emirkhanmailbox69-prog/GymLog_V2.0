@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { User } from 'firebase/auth';
 import type { AppState } from '../types';
-import { subscribeToState, pushStateToCloud } from '../firebase';
+import { subscribeToState, pushStateToCloud, getGoogleRedirectResult } from '../firebase';
 
 export function useCloudSync(
   user: User | null,
@@ -13,6 +13,15 @@ export function useCloudSync(
   const initialSyncDone = useRef(false);
   const stateRef = useRef(state);
   stateRef.current = state;
+
+  // Обработка результата редиректа (для привязки Google)
+  useEffect(() => {
+    getGoogleRedirectResult().then(result => {
+      if (result?.error) {
+        console.error('Google link redirect error:', result.error);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     if (!user) {
