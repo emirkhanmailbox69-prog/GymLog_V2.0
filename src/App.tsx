@@ -9,7 +9,7 @@ import type { ActiveWorkout, AppState, Exercise, Program, SetEntry, Tab, Workout
 import { loadState, saveState, downloadBackup } from './storage';
 import {
   firebaseConfigured, subscribeToAuth, ensureAnonymousAuth,
-  linkAnonymousWithGoogle, logOut, auth, getGoogleRedirectResult
+  linkAnonymousWithGoogle, logOut
 } from './firebase';
 import { useCloudSync } from './hooks/useCloudSync';
 
@@ -80,24 +80,7 @@ export default function App() {
   }, []);
 
    const { lastSyncedAt, isSyncing, syncError, forceSync } = useCloudSync(user, state, setState);
-
-  useEffect(() => {
-    getGoogleRedirectResult().then(async (result) => {
-      if (!result.success && result.error) {
-        if (result.error.code === 'auth/credential-already-in-use') {
-          notify('Этот Google-аккаунт уже привязан к другому профилю');
-        } else if (!result.error.code.includes('popup') && !result.error.code.includes('cancelled')) {
-          notify(`Ошибка привязки: ${result.error.message}`);
-        }
-      } else if (result.success && result.user) {
-        try { await result.user.reload(); } catch { /* ignore */ }
-        if (auth.currentUser) setUser(auth.currentUser);
-        notify('Прогресс сохранён навсегда ✓');
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
+  
   useEffect(() => {
     if (tab !== 'programs') {
       setProgramsView('list');
@@ -110,17 +93,26 @@ export default function App() {
     window.setTimeout(() => setToast(''), 2600);
   }
 
-  async function handleLinkGoogle() {
+    async function handleLinkGoogle() {
     try {
-      await linkAnonymousWithGoogle();
+      const linkedUser = await linkAnonymousWithGoogle();
+      setUser(linkedUser);
+      notify(`Прогресс сохранён навсегда: ${linkedUser.email || 'Google-аккаунт'}`);
     } catch (error: unknown) {
-      const code = (error as { code?: string })?.code;
-      if (code === 'auth/credential-already-in-use') {
-        notify('Этот Google-аккаунт уже используется. Войдите в него, чтобы получить доступ к старым данным.');
+      const code = (error as { code?: string })?.code || '';
+      const message = (error as { message?: string })?.message || '';
+      if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
+        notify('Браузер заблокировал окно Google. Открой приложение в Safari (не через ярлык) и попробуй снова.');
+      } else if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        notify('Окно Google закрыто. Попробуй снова.');
+      } else if (code === 'auth/credential-already-in-use') {
+        notify('Этот Google-аккаунт уже используется в другом профиле.');
+      } else if (code === 'auth/network-request-failed') {
+        notify('Нет связи с Google. Проверь интернет.');
       } else {
-        notify('Не удалось подключить Google. Попробуйте позже.');
-        console.error('Link error:', error);
+        notify(`Не удалось подключить: ${code || message || 'неизвестная ошибка'}`);
       }
+      console.error('Link error:', error);
     }
   }
 
