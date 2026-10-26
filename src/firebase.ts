@@ -1,5 +1,8 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithRedirect, signOut, onAuthStateChanged } from 'firebase/auth';
+import {
+  getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider,
+  linkWithRedirect, getRedirectResult, signOut
+} from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
@@ -26,11 +29,39 @@ export const db = initializeFirestore(app, {
 
 const googleProvider = new GoogleAuthProvider();
 
-export const signInWithGoogle = () => signInWithRedirect(auth, googleProvider);
-export const logOut = () => signOut(auth);
-
 export function subscribeToAuth(callback: (user: User | null) => void) {
   return onAuthStateChanged(auth, callback);
+}
+
+/** Автоматический анонимный вход, если пользователь ещё не авторизован */
+export async function ensureAnonymousAuth(): Promise<void> {
+  if (auth.currentUser) return;
+  await signInAnonymously(auth);
+}
+
+/** Привязка текущего анонимного аккаунта к Google через редирект */
+export function linkAnonymousWithGoogle(): Promise<void> {
+  if (!auth.currentUser) return Promise.reject(new Error('Нет активного пользователя для привязки.'));
+  return linkWithRedirect(auth.currentUser, googleProvider);
+}
+
+/** Получение результата после возврата с Google-редиректа */
+export async function getGoogleRedirectResult(): Promise<{ error?: { code: string; message: string } } | null> {
+  try {
+    const result = await getRedirectResult(auth);
+    if (result && result.user) {
+      // Успешная привязка или вход
+      return null;
+    }
+    return null;
+  } catch (error: any) {
+    console.error('Redirect result error:', error);
+    return { error: { code: error.code, message: error.message } };
+  }
+}
+
+export async function logOut(): Promise<void> {
+  await signOut(auth);
 }
 
 export function subscribeToState(userId: string, callback: (state: AppState | null) => void) {
