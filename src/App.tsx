@@ -283,7 +283,7 @@ export default function App() {
 
         {tab === 'profile' && <section>
           <p className="eyebrow">ТВОИ ДАННЫЕ</p><h1>Профиль.</h1><p className="intro">Настройки и инструменты сохранения.</p>
-          <label className="field-label">
+         <label className="field-label">
   Имя
   <input
     className="field"
@@ -291,6 +291,19 @@ export default function App() {
     onChange={e => updateProfile(e.target.value, state.profile.bodyWeight)}
     onBlur={() => updateProfile(state.profile.name.trim() || 'Атлет', state.profile.bodyWeight)}
     maxLength={40}
+  />
+</label>
+<label className="field-label">
+  Вес (кг)
+  <input
+    className="field"
+    type="number"
+    inputMode="decimal"
+    min="0"
+    step="0.1"
+    value={state.profile.bodyWeight}
+    onChange={e => updateProfile(state.profile.name, e.target.value)}
+    placeholder="Например, 79"
   />
 </label>
           <SectionTitle title="Данные и безопасность" />
