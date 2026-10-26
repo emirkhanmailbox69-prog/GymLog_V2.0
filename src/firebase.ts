@@ -1,23 +1,48 @@
-import { initializeApp, getApps } from 'firebase/app';
-import { indexedDBLocalPersistence, initializeAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeApp } from 'firebase/app';
+import { getAuth, GoogleAuthProvider, signInWithRedirect, signOut, onAuthStateChanged } from 'firebase/auth';
+import type { User } from 'firebase/auth';
+import {
+  initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+  doc, setDoc, onSnapshot
+} from 'firebase/firestore';
+import type { AppState } from './types';
 
-const config = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID
+const firebaseConfig = {
+  apiKey: "AIzaSyC0kRaPp9Wyj64WqUgGhQQjHnGbhB-BiKM",
+  authDomain: "gymlog2-2947e.firebaseapp.com",
+  projectId: "gymlog2-2947e",
+  storageBucket: "gymlog2-2947e.firebasestorage.app",
+  messagingSenderId: "14005084417",
+  appId: "1:14005084417:web:36848090fd37b0cc43fb00"
 };
 
-export const firebaseConfigured = Object.values(config).every(Boolean);
-export const firebaseApp = firebaseConfigured
-  ? (getApps()[0] ?? initializeApp(config))
-  : null;
+export const firebaseConfigured = true;
 
-export const firebaseAuth = firebaseApp
-  ? initializeAuth(firebaseApp, { persistence: indexedDBLocalPersistence })
-  : null;
+const app = initializeApp(firebaseConfig);
+export const auth = getAuth(app);
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+});
 
-export const firestore = firebaseApp ? getFirestore(firebaseApp) : null;
+const googleProvider = new GoogleAuthProvider();
+
+export const signInWithGoogle = () => signInWithRedirect(auth, googleProvider);
+export const logOut = () => signOut(auth);
+
+export function subscribeToAuth(callback: (user: User | null) => void) {
+  return onAuthStateChanged(auth, callback);
+}
+
+export function subscribeToState(userId: string, callback: (state: AppState | null) => void) {
+  const userDoc = doc(db, 'users', userId);
+  return onSnapshot(userDoc, (snapshot) => {
+    callback(snapshot.exists() ? (snapshot.data() as AppState) : null);
+  }, (error) => {
+    console.error('Firestore sync error:', error);
+  });
+}
+
+export async function pushStateToCloud(userId: string, state: AppState) {
+  const userDoc = doc(db, 'users', userId);
+  await setDoc(userDoc, state);
+}
