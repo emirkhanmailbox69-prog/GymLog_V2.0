@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Activity, BarChart3, BookOpen, Check, ChevronDown, ChevronUp, CircleUserRound,
-  Clock3, Dumbbell, FileDown, Home, Plus, Save, ShieldCheck, Trash2,
-  Trophy, X
+  Activity, Award, BarChart3, BookOpen, Check, ChevronDown, ChevronUp, CircleUserRound,
+  Clock3, Dumbbell, FileDown, Home, Plus, Save, ShieldCheck, Star, Target, Trash2,
+  Trophy, X, Zap
 } from 'lucide-react';
 import type { ActiveWorkout, AppState, Exercise, Program, SetEntry, Tab, Workout, WorkoutExercise } from './types';
 import { loadState, saveState, downloadBackup } from './storage';
@@ -303,40 +303,121 @@ const streak = (() => {
           {state.workouts.length ? <div className="history-list">{state.workouts.map(w => <article className="panel history-card" key={w.id}><div className="history-top"><div><h3>{w.name}</h3><p>{localDate(w.endedAt)} · {durationMinutes(w.startedAt, w.endedAt)} мин</p></div><button className="icon-button subtle" aria-label="Удалить тренировку" onClick={() => deleteWorkout(w.id)}><Trash2 size={16} /></button></div><div className="history-metrics"><span><Dumbbell size={14} /> {w.exercises.length} упр.</span><span><Check size={14} /> {setCount(w)} подходов</span><span><Activity size={14} /> {fmt(volume(w))} кг</span><strong>+{w.earnedXp} XP</strong></div><details><summary>Упражнения и подходы</summary>{w.exercises.map(e => <div className="history-exercise" key={e.id}><b>{e.name}</b><span>{e.sets.filter(s => s.done).map(s => `${s.weight || 0} кг × ${s.reps || 0}`).join(' · ') || 'Нет отмеченных подходов'}</span></div>)}</details></article>)}</div> : <Empty title="История пока пуста" text="Заверши первую тренировку. Она появится здесь вместе с деталями подходов." />}
         </section>}
 
-        {tab === 'quest' && <section>
-          <p className="eyebrow">ПРОГРЕСС И МОТИВАЦИЯ</p><h1>GymQuest.</h1><p className="intro">Игровой прогресс вычисляется из завершённых тренировок — без отдельного несогласованного счётчика XP.</p>
-          <div className="quest-card"><div className="quest-icon"><Trophy size={30} /></div><p className="eyebrow">ТВОЙ РАНГ</p><h2>Уровень {level}</h2><div className="xp-line"><span>{xp % 250} / 250 XP</span><span>{250 - xp % 250} до уровня</span></div><div className="progress-track"><span style={{ width: `${(xp % 250) / 2.5}%` }} /></div><p className="quest-note">{state.workouts.length === 0 ? 'Первая тренировка откроет путь.' : `Выполнено тренировок: ${state.workouts.length}. Продолжай в своём темпе.`}</p></div>
-          <div className="panel quest-rules"><h3>Как начисляется опыт</h3><p>За тренировку с хотя бы одним отмеченным выполненным подходом начисляется 20 XP плюс 5 XP за выполненный подход и 2 XP за упражнение, максимум 100 XP за занятие. Пустая тренировка XP не даёт.</p><p>Удаление тренировки пересчитывает XP и уровень из оставшейся истории.</p></div>
+                {tab === 'quest' && <section>
+          <p className="eyebrow">ПРОГРЕСС И НАГРАДЫ</p>
+          <h1>Награды.</h1>
+          <p className="intro">Достижения открываются автоматически по мере тренировок.</p>
+
+          <div className="quest-card">
+            <div className="quest-icon"><Trophy size={28} /></div>
+            <p className="eyebrow">ТВОЙ РАНГ</p>
+            <h2>Уровень {level}</h2>
+            <div className="xp-line"><span>{xp % 250} / 250 XP</span><span>{250 - xp % 250} до уровня</span></div>
+            <div className="progress-track"><span style={{ width: `${(xp % 250) / 2.5}%` }} /></div>
+            <p className="quest-note">{state.workouts.length === 0 ? 'Первая тренировка откроет путь.' : `Тренировок завершено: ${state.workouts.length}.`}</p>
+          </div>
+
+          <SectionTitle title="Достижения" />
+          <div className="achievements-grid">
+            {[
+              { id: 'first', icon: Award, title: 'Первый шаг', desc: 'Заверши тренировку', unlocked: state.workouts.length >= 1 },
+              { id: 'five', icon: Star, title: 'Пятёрка', desc: '5 тренировок', unlocked: state.workouts.length >= 5 },
+              { id: 'ten', icon: Star, title: 'Десятка', desc: '10 тренировок', unlocked: state.workouts.length >= 10 },
+              { id: 'twentyfive', icon: Trophy, title: 'Четверть сотни', desc: '25 тренировок', unlocked: state.workouts.length >= 25 },
+              { id: 'fifty', icon: Trophy, title: 'Полтинник', desc: '50 тренировок', unlocked: state.workouts.length >= 50 },
+              { id: 'streak3', icon: Zap, title: 'На волне', desc: 'Серия 3 дня', unlocked: streak >= 3 },
+              { id: 'streak7', icon: Zap, title: 'Неделя силы', desc: 'Серия 7 дней', unlocked: streak >= 7 },
+              { id: 'lvl5', icon: Target, title: 'Пятый уровень', desc: 'Достигни ур. 5', unlocked: level >= 5 },
+              { id: 'lvl10', icon: Target, title: 'Десятый уровень', desc: 'Достигни ур. 10', unlocked: level >= 10 },
+              { id: 'vol10k', icon: Dumbbell, title: 'Первая тонна', desc: '10 000 кг объёма', unlocked: state.workouts.reduce((n, w) => n + volume(w), 0) >= 10000 },
+              { id: 'vol50k', icon: Dumbbell, title: 'Пять тонн', desc: '50 000 кг объёма', unlocked: state.workouts.reduce((n, w) => n + volume(w), 0) >= 50000 },
+              { id: 'sets100', icon: Check, title: 'Сто подходов', desc: '100 выполненных подходов', unlocked: state.workouts.reduce((n, w) => n + setCount(w), 0) >= 100 }
+            ].map(a => {
+              const Icon = a.icon;
+              return (
+                <div key={a.id} className={`achievement ${a.unlocked ? 'unlocked' : 'locked'}`}>
+                  <div className="achievement-icon"><Icon size={22} /></div>
+                  <b>{a.title}</b>
+                  <small>{a.desc}</small>
+                </div>
+              );
+            })}
+          </div>
         </section>}
 
-        {tab === 'profile' && <section>
-          <p className="eyebrow">ТВОИ ДАННЫЕ</p><h1>Профиль.</h1><p className="intro">Настройки и инструменты сохранения.</p>
-         <label className="field-label">
-  Имя
-  <input
-    className="field"
-    value={state.profile.name}
-    onChange={e => updateProfile(e.target.value, state.profile.bodyWeight)}
-    onBlur={() => updateProfile(state.profile.name.trim() || 'Атлет', state.profile.bodyWeight)}
-    maxLength={40}
-  />
-</label>
-<label className="field-label">
-  Вес (кг)
-  <input
-    className="field"
-    type="number"
-    inputMode="decimal"
-    min="0"
-    step="0.1"
-    value={state.profile.bodyWeight}
-    onChange={e => updateProfile(state.profile.name, e.target.value)}
-    placeholder="Например, 79"
-  />
-</label>
-          <SectionTitle title="Данные и безопасность" />
-          <div className="panel settings-list"><div className="setting-row"><div className="setting-icon"><ShieldCheck size={18} /></div><div><b>Локальное автосохранение</b><small>Сохраняет изменения на этом устройстве.</small></div><span className="status-dot" /></div><div className="setting-row"><div className="setting-icon"><Activity size={18} /></div><div><b>Облачная синхронизация</b><small>{firebaseConfigured ? 'Firebase настроен, синхронизацию нужно подключить и проверить.' : 'Firebase пока не настроен в этой сборке.'}</small></div><span className={`status-dot ${firebaseConfigured ? 'status-pending' : ''}`} /></div><button className="setting-action" onClick={exportData}><FileDown size={18} /><span><b>Экспортировать JSON</b><small>Независимая резервная копия тренировок.</small></span></button><label className="setting-action"><Save size={18} /><span><b>Импортировать JSON</b><small>Восстановить данные из резервной копии.</small></span><input type="file" accept=".json,application/json" hidden onChange={e => importData(e.target.files?.[0])} /></label></div>
-          <div className="notice">Важно: локальное сохранение не заменяет резервную копию. Для восстановления после смены телефона нужно подключить и проверить постоянный вход Firebase. В этой стартовой сборке облачная синхронизация ещё не включена.</div>
+                {tab === 'profile' && <section>
+          <p className="eyebrow">ТВОИ ДАННЫЕ</p>
+          <h1>Профиль.</h1>
+
+          <div className="profile-hero">
+            <div className="profile-avatar">{(state.profile.name.trim()[0] || 'А').toLocaleUpperCase('ru-RU')}</div>
+            <div className="profile-hero-info">
+              <b>{state.profile.name || 'Атлет'}</b>
+              <small>{state.profile.bodyWeight ? `${state.profile.bodyWeight} кг` : 'Вес не указан'}</small>
+            </div>
+          </div>
+
+          <div className="settings-section">
+            <p className="settings-header">Личные данные</p>
+            <div className="settings-group">
+              <label className="settings-row-input">
+                <span>Имя</span>
+                <input
+                  className="settings-input"
+                  value={state.profile.name}
+                  onChange={e => updateProfile(e.target.value, state.profile.bodyWeight)}
+                  onBlur={() => updateProfile(state.profile.name.trim() || 'Атлет', state.profile.bodyWeight)}
+                  maxLength={40}
+                />
+              </label>
+              <label className="settings-row-input">
+                <span>Вес (кг)</span>
+                <input
+                  className="settings-input"
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.1"
+                  value={state.profile.bodyWeight}
+                  onChange={e => updateProfile(state.profile.name, e.target.value)}
+                  placeholder="—"
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="settings-section">
+            <p className="settings-header">Данные и безопасность</p>
+            <div className="settings-group">
+              <div className="setting-row">
+                <div className="setting-icon"><ShieldCheck size={17} /></div>
+                <div><b>Локальное автосохранение</b><small>Сохраняет изменения на устройстве.</small></div>
+                <span className="status-dot" />
+              </div>
+              <div className="setting-row">
+                <div className="setting-icon"><Activity size={17} /></div>
+                <div><b>Облачная синхронизация</b><small>{firebaseConfigured ? 'Firebase настроен, синхронизацию нужно подключить.' : 'Не настроена в этой сборке.'}</small></div>
+                <span className={`status-dot ${firebaseConfigured ? 'status-pending' : ''}`} />
+              </div>
+            </div>
+          </div>
+
+          <div className="settings-section">
+            <p className="settings-header">Резервные копии</p>
+            <div className="settings-group">
+              <button className="settings-action" onClick={exportData}>
+                <FileDown size={17} />
+                <span><b>Экспортировать JSON</b><small>Независимая копия тренировок.</small></span>
+              </button>
+              <label className="settings-action">
+                <Save size={17} />
+                <span><b>Импортировать JSON</b><small>Восстановить из резервной копии.</small></span>
+                <input type="file" accept=".json,application/json" hidden onChange={e => importData(e.target.files?.[0])} />
+              </label>
+            </div>
+          </div>
+
+          <div className="notice">Локальное сохранение не заменяет резервную копию. Для восстановления после смены телефона нужно подключить и проверить Firebase. В этой сборке облачная синхронизация ещё не включена.</div>
         </section>}
       </main>
 
