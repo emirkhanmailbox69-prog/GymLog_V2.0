@@ -9,7 +9,7 @@ import type { ActiveWorkout, AppState, Exercise, Program, SetEntry, Tab, Workout
 import { loadState, saveState, downloadBackup } from './storage';
 import {
   firebaseConfigured, subscribeToAuth, ensureAnonymousAuth,
-  linkAnonymousWithGoogle, logOut
+  linkAnonymousWithGoogle, logOut, auth, getGoogleRedirectResult
 } from './firebase';
 import { useCloudSync } from './hooks/useCloudSync';
 
@@ -30,6 +30,16 @@ const xpFor = (w: ActiveWorkout) => {
 };
 const levelFor = (xp: number) => Math.floor(xp / 250) + 1;
 const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU');
+const formatSyncTime = (ts: number | null): string => {
+  if (!ts) return 'ещё не синхронизировано';
+  const d = new Date(ts);
+  const now = new Date();
+  const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === now.toDateString()) return `сегодня в ${time}`;
+  const y = new Date(now); y.setDate(now.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return `вчера в ${time}`;
+  return d.toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+};
 
 const CATEGORIES = ['Ноги и ягодицы', 'Спина', 'Грудь', 'Плечи (Дельты)', 'Руки (Бицепс и Трицепс)', 'Пресс и кор'];
 const MUSCLE_MAP: Record<string, string> = {
@@ -69,7 +79,24 @@ export default function App() {
     return unsubscribe;
   }, []);
 
-  useCloudSync(user, state, setState);
+   const { lastSyncedAt, isSyncing, syncError, forceSync } = useCloudSync(user, state, setState);
+
+  useEffect(() => {
+    getGoogleRedirectResult().then(async (result) => {
+      if (!result.success && result.error) {
+        if (result.error.code === 'auth/credential-already-in-use') {
+          notify('Этот Google-аккаунт уже привязан к другому профилю');
+        } else if (!result.error.code.includes('popup') && !result.error.code.includes('cancelled')) {
+          notify(`Ошибка привязки: ${result.error.message}`);
+        }
+      } else if (result.success && result.user) {
+        try { await result.user.reload(); } catch { /* ignore */ }
+        if (auth.currentUser) setUser(auth.currentUser);
+        notify('Прогресс сохранён навсегда ✓');
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (tab !== 'programs') {
@@ -555,14 +582,14 @@ export default function App() {
             </div>
           </div>
 
-          <div className="settings-section">
+                    <div className="settings-section">
             <p className="settings-header">Синхронизация</p>
             <div className="settings-group">
               <div className="setting-row">
                 <div className="setting-icon"><ShieldCheck size={17} /></div>
                 <div>
                   <b>Локальное сохранение</b>
-                  <small>Данные хранятся на этом устройстве.</small>
+                  <small>На этом устройстве · автосохранение после каждого действия</small>
                 </div>
                 <span className="status-dot status-active" title="Активно" />
               </div>
@@ -573,14 +600,24 @@ export default function App() {
                   <div>
                     <b>Облачная синхронизация</b>
                     <small>
-                      {user
-                        ? user.isAnonymous
-                          ? 'Данные сохраняются в облаке, но только для этого устройства.'
-                          : `Синхронизировано: ${user.email || user.displayName || 'аккаунт Google'}`
-                        : 'Подключение к облаку…'}
+                      {!user
+                        ? 'Подключение к облаку…'
+                        : user.isAnonymous
+                          ? 'Анонимный аккаунт · только это устройство'
+                          : `Google · ${user.email || 'аккаунт'}`}
                     </small>
+                    {user && (
+                      <small className="sync-time">
+                        {isSyncing
+                          ? 'Синхронизация…'
+                          : lastSyncedAt
+                            ? `Сохранено: ${formatSyncTime(lastSyncedAt)}`
+                            : 'Ещё не синхронизировано'}
+                      </small>
+                    )}
+                    {syncError && <small className="sync-error">Ошибка: {syncError}</small>}
                   </div>
-                  <span className={`status-dot ${user ? (user.isAnonymous ? 'status-pending' : 'status-active') : ''}`} title={user ? (user.isAnonymous ? 'Только на этом устройстве' : 'Синхронизировано') : 'Подключение'} />
+                  <span className={`status-dot ${isSyncing ? 'status-pending' : user ? (user.isAnonymous ? 'status-pending' : 'status-active') : ''}`} />
                 </div>
               ) : (
                 <div className="setting-row">
@@ -594,6 +631,18 @@ export default function App() {
               )}
             </div>
 
+            {user && (
+              <p className="sync-hint">
+                Изменения отправляются в облако автоматически через 2 секунды после любого действия.
+              </p>
+            )}
+
+            {user && !user.isAnonymous && (
+              <button className="button button-secondary full-width" onClick={forceSync} disabled={isSyncing} style={{ marginTop: 8 }}>
+                <Cloud size={17} /> {isSyncing ? 'Синхронизация…' : 'Синхронизировать сейчас'}
+              </button>
+            )}
+
             {user && user.isAnonymous && (
               <div className="sync-warning">
                 <p>Прогресс сохранён только на этом устройстве. Если удалить приложение — данные не восстановятся.</p>
@@ -604,7 +653,7 @@ export default function App() {
             )}
 
             {user && !user.isAnonymous && (
-              <button className="button button-secondary full-width" onClick={handleLogout} style={{ marginTop: 12 }}>
+              <button className="button button-secondary full-width" onClick={handleLogout} style={{ marginTop: 8 }}>
                 Выйти из аккаунта
               </button>
             )}
@@ -625,7 +674,7 @@ export default function App() {
             </div>
           </div>
 
-          <div className="notice">Локальное сохранение не заменяет резервную копию. Для восстановления после смены телефона нужно привязать Google-аккаунт.</div>
+         <div className="notice">Облачная синхронизация привязана к устройству. Чтобы переносить данные между телефонами, привяжите Google-аккаунт (кнопка выше). Экспорт JSON — независимая копия на диск.</div>
         </section>}
       </main>
 
