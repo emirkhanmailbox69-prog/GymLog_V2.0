@@ -2,6 +2,7 @@ import type { AppState } from './types';
 import { starterExercises } from './data';
 
 const STORAGE_KEY = 'gymlog3_state_v1';
+const SEED_FLAG = 'gymlog_seeded_v2';
 
 export function initialState(): AppState {
   return {
@@ -25,17 +26,26 @@ export function loadState(): AppState {
     }
     const value = parsed as AppState;
     const defaults = initialState();
+
+    let exercises = Array.isArray(value.exercises) ? value.exercises : defaults.exercises;
+
+    if (!localStorage.getItem(SEED_FLAG)) {
+      const existingIds = new Set(exercises.map(e => e.id));
+      const toAdd = defaults.exercises.filter(e => !existingIds.has(e.id));
+      if (toAdd.length) exercises = [...exercises, ...toAdd];
+      localStorage.setItem(SEED_FLAG, '1');
+    }
+
     return {
       ...defaults,
       ...value,
       profile: { ...defaults.profile, ...value.profile },
       settings: { ...defaults.settings, ...value.settings },
-      exercises: Array.isArray(value.exercises) ? value.exercises : defaults.exercises,
+      exercises,
       programs: Array.isArray(value.programs) ? value.programs : [],
       workouts: Array.isArray(value.workouts) ? value.workouts : []
     };
   } catch {
-    // Do not overwrite malformed data silently; the UI will still start with defaults.
     return initialState();
   }
 }
