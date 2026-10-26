@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import {
   getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider,
-  linkWithRedirect, getRedirectResult, signOut
+  linkWithPopup, signOut
 } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import {
@@ -40,14 +40,14 @@ export async function ensureAnonymousAuth(): Promise<void> {
 }
 
 /** Привязка текущего анонимного аккаунта к Google через редирект */
-export function linkAnonymousWithGoogle(): Promise<void> {
-  if (!auth.currentUser) return Promise.reject(new Error('Нет активного пользователя для привязки.'));
-  return linkWithRedirect(auth.currentUser, googleProvider);
+export async function linkAnonymousWithGoogle(): Promise<User> {
+  if (!auth.currentUser) throw new Error('Нет активного пользователя для привязки.');
+  const result = await linkWithPopup(auth.currentUser, googleProvider);
+  return result.user;
 }
 
 /** Получение результата после возврата с Google-редиректа */
 export async function getGoogleRedirectResult(): Promise<
-  { success: true; user: User } | { success: false; error?: { code: string; message: string } }
 > {
   try {
     const result = await getRedirectResult(auth);
