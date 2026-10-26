@@ -367,7 +367,7 @@ export default function App() {
           <h1>Библиотека.</h1>
           <p className="intro">Упражнения для тренировок и программ.</p>
 
-            <div className="library-tabs">
+          <div className="library-tabs">
             <button className={`library-tab ${libraryTab === 'browse' ? 'active' : ''}`} onClick={() => setLibraryTab('browse')}>
               <BookOpen size={20} /><span>Библиотека упражнений</span>
             </button>
@@ -378,7 +378,7 @@ export default function App() {
 
           {libraryTab === 'browse' && (
             <div className="category-list">
-              {state.exercises.length === 0 && <Empty title="Библиотека пуста" text="Добавь упражнения или импортируй из истории." />}
+              {state.exercises.length === 0 && <Empty title="Библиотека пуста" text="Добавь упражнения на вкладке «Добавить своё»." />}
               {orderedCategories.filter(cat => (groupedExercises[cat]?.length || 0) > 0).map(cat => {
                 const exercises = groupedExercises[cat] || [];
                 const expanded = expandedCategories[cat] ?? false;
@@ -426,7 +426,6 @@ export default function App() {
               <button className="button button-primary full-width" onClick={addCustomExercise}><Plus size={16} /> Добавить в библиотеку</button>
             </div>
           )}
-
         </section>}
 
         {tab === 'history' && <section>
@@ -478,7 +477,7 @@ export default function App() {
           </div>
         </section>}
 
-                {tab === 'profile' && <section>
+        {tab === 'profile' && <section>
           <p className="eyebrow">ТВОИ ДАННЫЕ</p>
           <h1>Профиль.</h1>
 
@@ -559,79 +558,6 @@ export default function App() {
               <button className="settings-action" onClick={exportData}>
                 <FileDown size={17} />
                 <span><b>Экспортировать JSON</b><small>Независимая копия всех данных.</small></span>
-              </button>
-              <label className="settings-action">
-                <Save size={17} />
-                <span><b>Импортировать JSON</b><small>Восстановить из резервной копии.</small></span>
-                <input type="file" accept=".json,application/json" hidden onChange={e => importData(e.target.files?.[0])} />
-              </label>
-            </div>
-          </div>
-
-          <div className="notice">Локальное сохранение не заменяет резервную копию. Для восстановления после смены телефона нужно подключить и проверить Firebase. В этой сборке облачная синхронизация ещё не включена.</div>
-        </section>}
-          <p className="eyebrow">ТВОИ ДАННЫЕ</p>
-          <h1>Профиль.</h1>
-
-          <div className="profile-hero">
-            <div className="profile-avatar">{(state.profile.name.trim()[0] || 'А').toLocaleUpperCase('ru-RU')}</div>
-            <div className="profile-hero-info">
-              <b>{state.profile.name || 'Атлет'}</b>
-              <small>{state.profile.bodyWeight ? `${state.profile.bodyWeight} кг` : 'Вес не указан'}</small>
-            </div>
-          </div>
-
-          <div className="settings-section">
-            <p className="settings-header">Личные данные</p>
-            <div className="settings-group">
-              <label className="settings-row-input">
-                <span>Имя</span>
-                <input
-                  className="settings-input"
-                  value={state.profile.name}
-                  onChange={e => updateProfile(e.target.value, state.profile.bodyWeight)}
-                  onBlur={() => updateProfile(state.profile.name.trim() || 'Атлет', state.profile.bodyWeight)}
-                  maxLength={40}
-                />
-              </label>
-              <label className="settings-row-input">
-                <span>Вес (кг)</span>
-                <input
-                  className="settings-input"
-                  type="number"
-                  inputMode="decimal"
-                  min="0"
-                  step="0.1"
-                  value={state.profile.bodyWeight}
-                  onChange={e => updateProfile(state.profile.name, e.target.value)}
-                  placeholder="—"
-                />
-              </label>
-            </div>
-          </div>
-
-          <div className="settings-section">
-            <p className="settings-header">Данные и безопасность</p>
-            <div className="settings-group">
-              <div className="setting-row">
-                <div className="setting-icon"><ShieldCheck size={17} /></div>
-                <div><b>Локальное автосохранение</b><small>Сохраняет изменения на устройстве.</small></div>
-                <span className="status-dot" />
-              </div>
-              <div className="setting-row">
-                <div className="setting-icon"><Activity size={17} /></div>
-                <div><b>Облачная синхронизация</b><small>{firebaseConfigured ? 'Firebase настроен, синхронизацию нужно подключить.' : 'Не настроена в этой сборке.'}</small></div>
-                <span className={`status-dot ${firebaseConfigured ? 'status-pending' : ''}`} />
-              </div>
-            </div>
-          </div>
-
-          <div className="settings-section">
-            <p className="settings-header">Резервные копии</p>
-            <div className="settings-group">
-              <button className="settings-action" onClick={exportData}>
-                <FileDown size={17} />
-                <span><b>Экспортировать JSON</b><small>Независимая копия тренировок.</small></span>
               </button>
               <label className="settings-action">
                 <Save size={17} />
