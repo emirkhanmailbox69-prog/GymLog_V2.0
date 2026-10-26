@@ -291,3 +291,26 @@ h3{font:600 16px/1.3 -apple-system,sans-serif;margin-bottom:6px}
 .settings-action b,.settings-action small{display:block}
 .settings-action b{font-size:14px;font-weight:600}
 .settings-action small{font-size:11px;color:var(--muted);line-height:1.4;margin-top:3px}
+.sync-warning {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(255, 214, 10, 0.1);
+  border-radius: 10px;
+  color: #ffe083;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.sync-warning p {
+  margin: 0 0 8px;
+}
+.sync-warning .button {
+  background: var(--lime);
+  color: #000;
+}
+.status-dot.status-active {
+  background: #32d4ff;
+  box-shadow: 0 0 8px rgba(50, 212, 255, 0.5);
+}
+.status-dot.status-pending {
+  background: #ffd60a;
+}
