@@ -282,3 +282,5 @@ h3{font:600 16px/1.3 -apple-system,sans-serif;margin-bottom:6px}
   .library-tab{min-height:72px;padding:10px 4px;font-size:10px}
   .import-category{max-width:120px}
 }
+.status-dot.status-active { background: #32d4ff; box-shadow: 0 0 8px rgba(50, 212, 255, 0.5); }
+.status-dot.status-pending { background: #ffd60a; }
