@@ -367,13 +367,13 @@ export default function App() {
           <h1>Библиотека.</h1>
           <p className="intro">Упражнения для тренировок и программ.</p>
 
-          <div className="library-tabs">
+            <div className="library-tabs">
             <button className={`library-tab ${libraryTab === 'browse' ? 'active' : ''}`} onClick={() => setLibraryTab('browse')}>
               <BookOpen size={20} /><span>Библиотека упражнений</span>
             </button>
             <button className={`library-tab ${libraryTab === 'add' ? 'active' : ''}`} onClick={() => setLibraryTab('add')}>
               <Plus size={20} /><span>Добавить своё</span>
-              </button>
+            </button>
           </div>
 
           {libraryTab === 'browse' && (
