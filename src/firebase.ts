@@ -33,36 +33,15 @@ export function subscribeToAuth(callback: (user: User | null) => void) {
   return onAuthStateChanged(auth, callback);
 }
 
-/** Автоматический анонимный вход, если пользователь ещё не авторизован */
 export async function ensureAnonymousAuth(): Promise<void> {
   if (auth.currentUser) return;
   await signInAnonymously(auth);
 }
 
-/** Привязка текущего анонимного аккаунта к Google через редирект */
 export async function linkAnonymousWithGoogle(): Promise<User> {
   if (!auth.currentUser) throw new Error('Нет активного пользователя для привязки.');
   const result = await linkWithPopup(auth.currentUser, googleProvider);
   return result.user;
-}
-
-/** Получение результата после возврата с Google-редиректа */
-export async function getGoogleRedirectResult(): Promise<
-> {
-  try {
-    const result = await getRedirectResult(auth);
-    if (result && result.user) {
-      return { success: true, user: result.user };
-    }
-    return { success: false };
-  } catch (error: unknown) {
-    const err = error as { code?: string; message?: string };
-    console.error('Redirect result error:', error);
-    return {
-      success: false,
-      error: { code: err.code || 'unknown', message: err.message || 'Неизвестная ошибка' }
-    };
-  }
 }
 
 export async function logOut(): Promise<void> {
