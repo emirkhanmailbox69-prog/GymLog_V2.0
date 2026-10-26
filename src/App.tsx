@@ -478,7 +478,98 @@ export default function App() {
           </div>
         </section>}
 
-        {tab === 'profile' && <section>
+                {tab === 'profile' && <section>
+          <p className="eyebrow">ТВОИ ДАННЫЕ</p>
+          <h1>Профиль.</h1>
+
+          <div className="profile-hero">
+            <div className="profile-avatar">{(state.profile.name.trim()[0] || 'А').toLocaleUpperCase('ru-RU')}</div>
+            <div className="profile-hero-info">
+              <b>{state.profile.name || 'Атлет'}</b>
+              <small>{state.profile.bodyWeight ? `${state.profile.bodyWeight} кг` : 'Вес не указан'}</small>
+            </div>
+          </div>
+
+          <div className="settings-section">
+            <p className="settings-header">Личные данные</p>
+            <div className="settings-group">
+              <label className="settings-row-input">
+                <span>Имя</span>
+                <input
+                  className="settings-input"
+                  value={state.profile.name}
+                  onChange={e => updateProfile(e.target.value, state.profile.bodyWeight)}
+                  onBlur={() => updateProfile(state.profile.name.trim() || 'Атлет', state.profile.bodyWeight)}
+                  maxLength={40}
+                />
+              </label>
+              <label className="settings-row-input">
+                <span>Вес (кг)</span>
+                <input
+                  className="settings-input"
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.1"
+                  value={state.profile.bodyWeight}
+                  onChange={e => updateProfile(state.profile.name, e.target.value)}
+                  placeholder="—"
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="settings-section">
+            <p className="settings-header">Синхронизация</p>
+            <div className="settings-group">
+              <div className="setting-row">
+                <div className="setting-icon"><ShieldCheck size={17} /></div>
+                <div>
+                  <b>Локальное сохранение</b>
+                  <small>Данные хранятся на этом устройстве.</small>
+                </div>
+                <span className="status-dot status-active" title="Активно" />
+              </div>
+
+              {firebaseConfigured ? (
+                <div className="setting-row">
+                  <div className="setting-icon"><Activity size={17} /></div>
+                  <div>
+                    <b>Облачная синхронизация</b>
+                    <small>Firebase настроен, но синхронизация ещё не включена.</small>
+                  </div>
+                  <span className="status-dot status-pending" title="Требуется настройка" />
+                </div>
+              ) : (
+                <div className="setting-row">
+                  <div className="setting-icon"><Activity size={17} /></div>
+                  <div>
+                    <b>Облачная синхронизация</b>
+                    <small>Firebase не настроен в этой сборке.</small>
+                  </div>
+                  <span className="status-dot" title="Не настроено" />
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="settings-section">
+            <p className="settings-header">Резервные копии</p>
+            <div className="settings-group">
+              <button className="settings-action" onClick={exportData}>
+                <FileDown size={17} />
+                <span><b>Экспортировать JSON</b><small>Независимая копия всех данных.</small></span>
+              </button>
+              <label className="settings-action">
+                <Save size={17} />
+                <span><b>Импортировать JSON</b><small>Восстановить из резервной копии.</small></span>
+                <input type="file" accept=".json,application/json" hidden onChange={e => importData(e.target.files?.[0])} />
+              </label>
+            </div>
+          </div>
+
+          <div className="notice">Локальное сохранение не заменяет резервную копию. Для восстановления после смены телефона нужно подключить и проверить Firebase. В этой сборке облачная синхронизация ещё не включена.</div>
+        </section>}
           <p className="eyebrow">ТВОИ ДАННЫЕ</p>
           <h1>Профиль.</h1>
 
