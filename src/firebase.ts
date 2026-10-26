@@ -46,17 +46,22 @@ export function linkAnonymousWithGoogle(): Promise<void> {
 }
 
 /** Получение результата после возврата с Google-редиректа */
-export async function getGoogleRedirectResult(): Promise<{ error?: { code: string; message: string } } | null> {
+export async function getGoogleRedirectResult(): Promise<
+  { success: true; user: User } | { success: false; error?: { code: string; message: string } }
+> {
   try {
     const result = await getRedirectResult(auth);
     if (result && result.user) {
-      // Успешная привязка или вход
-      return null;
+      return { success: true, user: result.user };
     }
-    return null;
-  } catch (error: any) {
+    return { success: false };
+  } catch (error: unknown) {
+    const err = error as { code?: string; message?: string };
     console.error('Redirect result error:', error);
-    return { error: { code: error.code, message: error.message } };
+    return {
+      success: false,
+      error: { code: err.code || 'unknown', message: err.message || 'Неизвестная ошибка' }
+    };
   }
 }
 
