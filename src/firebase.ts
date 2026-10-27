@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import {
   getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider,
-  linkWithPopup, signOut
+  linkWithPopup, signInWithPopup, signOut
 } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import {
@@ -44,6 +44,10 @@ export async function linkAnonymousWithGoogle(): Promise<User> {
   return result.user;
 }
 
+export async function signInWithGoogleExisting(): Promise<User> {
+  const result = await signInWithPopup(auth, googleProvider);
+  return result.user;
+}
 export async function logOut(): Promise<void> {
   await signOut(auth);
 }
