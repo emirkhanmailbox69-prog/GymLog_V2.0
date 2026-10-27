@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Activity, Award, BarChart3, BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight,
-  ChevronUp, CircleUserRound, Cloud, Clock3, Dumbbell, FileDown, Home, MessageSquare, Plus, Save,
-  ShieldCheck, Star, Target, Trash2, Trophy, X, Zap
+  ChevronUp, CircleUserRound, Cloud, Clock3, Dumbbell, FileDown, History, Home, MessageSquare,
+  Pencil, Plus, RefreshCw, Save, ShieldCheck, Star, Target, Trash2, Trophy, X, Zap
 } from 'lucide-react';
 import type { User } from 'firebase/auth';
 import type { ActiveWorkout, AppState, Exercise, Program, SetEntry, Tab, Workout, WorkoutExercise } from './types';
@@ -76,16 +76,29 @@ export default function App() {
   const [pickerQuery, setPickerQuery] = useState('');
   const [pickerNewCategory, setPickerNewCategory] = useState(CATEGORIES[0]);
   const [programName, setProgramName] = useState('');
+  const [programNote, setProgramNote] = useState('');
   const [programExerciseIds, setProgramExerciseIds] = useState<string[]>([]);
+  const [programSearch, setProgramSearch] = useState('');
+  const [programCustomExName, setProgramCustomExName] = useState('');
+  const [programCustomExCategory, setProgramCustomExCategory] = useState(CATEGORIES[0]);
+  const [showProgramCustomEx, setShowProgramCustomEx] = useState(false);
+  const [editingProgramId, setEditingProgramId] = useState<string | null>(null);
   const [showProgramBuilder, setShowProgramBuilder] = useState(false);
   const [exerciseName, setExerciseName] = useState('');
   const [exerciseMuscle, setExerciseMuscle] = useState(CATEGORIES[0]);
   const [openNotes, setOpenNotes] = useState<Record<string, boolean>>({});
   const [now, setNow] = useState(() => Date.now());
+  const [historyPickerOpen, setHistoryPickerOpen] = useState(false);
 
   const [programsView, setProgramsView] = useState<'list' | 'library'>('list');
   const [libraryTab, setLibraryTab] = useState<'browse' | 'add'>('browse');
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+
+  const allCategories = useMemo(() => {
+    const set = new Set<string>(CATEGORIES);
+    state.exercises.forEach(e => set.add(normalizeMuscle(e.muscle)));
+    return Array.from(set);
+  }, [state.exercises]);
 
   useEffect(() => {
     if (!saveState(state)) notify('Не удалось сохранить локально. Экспортируй резервную копию.');
@@ -110,6 +123,7 @@ export default function App() {
     if (tab !== 'programs') {
       setProgramsView('list');
       setLibraryTab('browse');
+      cancelProgramEdit();
     }
   }, [tab]);
 
@@ -187,6 +201,14 @@ export default function App() {
     `${e.name} ${e.muscle} ${e.equipment}`.toLocaleLowerCase('ru-RU').includes(pickerQuery.toLocaleLowerCase('ru-RU'))
   ), [state.exercises, pickerQuery]);
 
+  const filteredProgramExercises = useMemo(() => {
+    const q = programSearch.toLowerCase().trim();
+    if (!q) return state.exercises;
+    return state.exercises.filter(e =>
+      `${e.name} ${e.muscle} ${e.equipment}`.toLowerCase().includes(q)
+    );
+  }, [state.exercises, programSearch]);
+
   const groupedExercises = useMemo(() => {
     const groups: Record<string, Exercise[]> = {};
     for (const e of state.exercises) {
@@ -202,6 +224,32 @@ export default function App() {
 
   function patchActive(updater: (active: ActiveWorkout) => ActiveWorkout) {
     setState(s => s.activeWorkout ? { ...s, activeWorkout: updater(s.activeWorkout) } : s);
+  }
+
+  function cloneExercise(source: WorkoutExercise): WorkoutExercise {
+    const doneSets = source.sets.filter(s => s.done && (s.weight || s.reps));
+    const sets = doneSets.length > 0
+      ? doneSets.map(s => ({ id: uid(), weight: s.weight, reps: s.reps, done: false }))
+      : [emptySet(), emptySet(), emptySet()];
+    return {
+      id: uid(),
+      exerciseId: source.exerciseId,
+      name: source.name,
+      sets,
+      collapsed: false
+    };
+  }
+
+  function startFromWorkout(source: Workout) {
+    const newWorkout: ActiveWorkout = {
+      id: uid(),
+      name: source.name,
+      startedAt: Date.now(),
+      exercises: source.exercises.map(cloneExercise)
+    };
+    setState(s => ({ ...s, activeWorkout: newWorkout }));
+    setTab('workout');
+    notify(`Скопировано из «${source.name}»`);
   }
 
   function startWorkout(program?: Program) {
@@ -257,31 +305,86 @@ export default function App() {
     notify('История очищена. XP и статистика пересчитаны.');
   }
 
+  function cancelProgramEdit() {
+    setEditingProgramId(null);
+    setProgramName('');
+    setProgramNote('');
+    setProgramExerciseIds([]);
+    setProgramSearch('');
+    setProgramCustomExName('');
+    setProgramCustomExCategory(CATEGORIES[0]);
+    setShowProgramCustomEx(false);
+    setShowProgramBuilder(false);
+  }
+
+  function startEditProgram(p: Program) {
+    setEditingProgramId(p.id);
+    setProgramName(p.name);
+    setProgramNote(p.note || '');
+    setProgramExerciseIds(p.exerciseIds);
+    setProgramSearch('');
+    setShowProgramCustomEx(false);
+    setShowProgramBuilder(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   function addProgram() {
     const name = programName.trim();
     if (!name || programExerciseIds.length === 0) {
       notify('Укажи название и добавь хотя бы одно упражнение.');
       return;
     }
-    const program: Program = { id: uid(), name, exerciseIds: programExerciseIds, createdAt: Date.now() };
-    setState(s => ({ ...s, programs: [...s.programs, program] }));
-    setProgramName('');
-    setProgramExerciseIds([]);
-    setShowProgramBuilder(false);
-    notify('Программа сохранена.');
+    const note = programNote.trim() || undefined;
+    if (editingProgramId) {
+      setState(s => ({
+        ...s,
+        programs: s.programs.map(p => p.id === editingProgramId
+          ? { ...p, name, note, exerciseIds: programExerciseIds }
+          : p
+        )
+      }));
+      notify('Программа обновлена.');
+    } else {
+      const program: Program = { id: uid(), name, note, exerciseIds: programExerciseIds, createdAt: Date.now() };
+      setState(s => ({ ...s, programs: [...s.programs, program] }));
+      notify('Программа сохранена.');
+    }
+    cancelProgramEdit();
   }
 
-  function addCustomExercise() {
-    const name = exerciseName.trim();
-    if (!name) { notify('Введи название упражнения.'); return; }
+  function addCustomExerciseFromProgram() {
+    const name = programCustomExName.trim();
+    const category = programCustomExCategory.trim();
+    if (!name || !category) {
+      notify('Укажи название и категорию.');
+      return;
+    }
     if (state.exercises.some(e => e.name.toLowerCase() === name.toLowerCase())) {
       notify('Такое упражнение уже есть в библиотеке.');
       return;
     }
-    const exercise: Exercise = { id: uid(), name, muscle: exerciseMuscle, equipment: 'Пользовательское' };
+    const exercise: Exercise = { id: uid(), name, muscle: category, equipment: 'Пользовательское' };
+    setState(s => ({ ...s, exercises: [...s.exercises, exercise] }));
+    setProgramExerciseIds(ids => [...ids, exercise.id]);
+    setProgramCustomExName('');
+    setProgramCustomExCategory(CATEGORIES[0]);
+    setShowProgramCustomEx(false);
+    notify('Упражнение добавлено и выбрано.');
+  }
+
+  function addCustomExercise() {
+    const name = exerciseName.trim();
+    const category = exerciseMuscle.trim();
+    if (!name) { notify('Введи название упражнения.'); return; }
+    if (!category) { notify('Укажи категорию.'); return; }
+    if (state.exercises.some(e => e.name.toLowerCase() === name.toLowerCase())) {
+      notify('Такое упражнение уже есть в библиотеке.');
+      return;
+    }
+    const exercise: Exercise = { id: uid(), name, muscle: category, equipment: 'Пользовательское' };
     setState(s => ({ ...s, exercises: [...s.exercises, exercise] }));
     setExerciseName('');
-    setExpandedCategories(prev => ({ ...prev, [exerciseMuscle]: true }));
+    setExpandedCategories(prev => ({ ...prev, [category]: true }));
     notify('Упражнение добавлено в библиотеку.');
   }
 
@@ -293,13 +396,18 @@ export default function App() {
       addExerciseToWorkout(existing);
       return;
     }
-    const exercise: Exercise = { id: uid(), name: trimmed, muscle: pickerNewCategory, equipment: 'Пользовательское' };
+    const category = pickerNewCategory.trim() || CATEGORIES[0];
+    const exercise: Exercise = { id: uid(), name: trimmed, muscle: category, equipment: 'Пользовательское' };
     setState(s => ({ ...s, exercises: [...s.exercises, exercise] }));
     addExerciseToWorkout(exercise);
   }
 
   function toggleCategory(cat: string) {
     setExpandedCategories(prev => ({ ...prev, [cat]: !prev[cat] }));
+  }
+
+  function toggleProgramExercise(id: string) {
+    setProgramExerciseIds(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]);
   }
 
   function exportData() {
@@ -380,10 +488,7 @@ export default function App() {
     { id: 'profile', label: 'Профиль', icon: CircleUserRound }
   ];
 
-  const orderedCategories = [
-    ...CATEGORIES,
-    ...Object.keys(groupedExercises).filter(c => !CATEGORIES.includes(c))
-  ];
+  const orderedCategories = allCategories;
 
   return (
     <div className="app-shell">
@@ -429,6 +534,25 @@ export default function App() {
             {currentWorkout ? 'Продолжить тренировку' : 'Начать тренировку'}
           </button>
 
+          {!currentWorkout && state.workouts.length > 0 && (
+            <div className="quick-start">
+              <button className="quick-start-btn" onClick={() => startFromWorkout(state.workouts[0])}>
+                <RefreshCw size={18} />
+                <div>
+                  <b>Повторить последнюю</b>
+                  <small>{state.workouts[0].name} · {localDate(state.workouts[0].endedAt)} · {setCount(state.workouts[0])} подходов</small>
+                </div>
+              </button>
+              <button className="quick-start-btn" onClick={() => setHistoryPickerOpen(true)}>
+                <History size={18} />
+                <div>
+                  <b>Из истории</b>
+                  <small>выбрать любую тренировку</small>
+                </div>
+              </button>
+            </div>
+          )}
+
           <div className="stats-grid">
             <Metric label="ТРЕНИРОВОК" value={String(state.workouts.length)} note="всего" />
             <Metric label="ОБЪЁМ" value={fmt(state.workouts.reduce((n, w) => n + volume(w), 0))} note="кг × повторы" />
@@ -447,8 +571,16 @@ export default function App() {
           {!currentWorkout ? <div className="panel empty-workout">
             <Dumbbell size={29} />
             <h3>Новая тренировка</h3>
-            <p>Добавляй упражнения из библиотеки. Программы остаются отдельными шаблонами.</p>
+            <p>Начни с нуля, повтори прошлую, выбери из истории или запусти программу.</p>
             <button className="button button-primary" onClick={() => startWorkout()}>Начать с нуля</button>
+            {state.workouts.length > 0 && <div className="quick-programs">
+              <button className="button button-secondary" onClick={() => startFromWorkout(state.workouts[0])}>
+                <RefreshCw size={15} /> Повторить последнюю
+              </button>
+              <button className="button button-secondary" onClick={() => setHistoryPickerOpen(true)}>
+                <History size={15} /> Из истории
+              </button>
+            </div>}
             {state.programs.length > 0 && <div className="quick-programs">{state.programs.map(p => <button key={p.id} className="button button-secondary" onClick={() => startWorkout(p)}>{p.name} <span>↗</span></button>)}</div>}
           </div> : <>
             <div className="workout-meta"><div><Clock3 size={16} /><span>Начата {localDate(currentWorkout.startedAt)}, {localTime(currentWorkout.startedAt)}</span></div><span>{currentWorkout.exercises.length} упражнений</span></div>
@@ -522,14 +654,108 @@ export default function App() {
             <ChevronRight size={20} />
           </button>
 
-          <button className="button button-primary full-width" onClick={() => setShowProgramBuilder(v => !v)}><Plus size={17} /> Создать программу</button>
+          <button className="button button-primary full-width" onClick={() => { if (showProgramBuilder) { cancelProgramEdit(); } else { setShowProgramBuilder(true); } }}>
+            <Plus size={17} /> {showProgramBuilder ? 'Скрыть билдер' : 'Создать программу'}
+          </button>
+
           {showProgramBuilder && <div className="panel builder">
-            <label className="field-label">Название программы<input className="field" placeholder="Например, Верх тела A" value={programName} onChange={e => setProgramName(e.target.value)} /></label>
-            <p className="eyebrow">ВЫБЕРИ УПРАЖНЕНИЯ</p>
-            <div className="selection-list">{state.exercises.map(e => <label key={e.id} className="selection-row"><input type="checkbox" checked={programExerciseIds.includes(e.id)} onChange={event => setProgramExerciseIds(ids => event.target.checked ? [...ids, e.id] : ids.filter(id => id !== e.id))} /><span>{e.name}<small>{normalizeMuscle(e.muscle)}</small></span></label>)}</div>
-            <button className="button button-primary full-width" onClick={addProgram}><Save size={16} /> Сохранить программу</button>
+            <div className="section-heading" style={{ marginTop: 0 }}>
+              <h2>{editingProgramId ? 'Редактирование программы' : 'Новая программа'}</h2>
+              {editingProgramId && <button className="text-link" onClick={cancelProgramEdit}>Отмена</button>}
+            </div>
+
+            <label className="field-label">Название программы
+              <input className="field" placeholder="Например, Верх тела A" value={programName} onChange={e => setProgramName(e.target.value)} maxLength={60} />
+            </label>
+
+            <label className="field-label">Примечание (опционально)
+              <textarea
+                className="program-note-textarea"
+                placeholder="Например: тренировка на массу, отдых 90 сек между подходами"
+                value={programNote}
+                onChange={e => setProgramNote(e.target.value)}
+                rows={2}
+                maxLength={500}
+              />
+            </label>
+
+            <p className="eyebrow">ВЫБЕРИ УПРАЖНЕНИЯ ({programExerciseIds.length} выбрано)</p>
+
+            <div className="selection-list-search">
+              <input
+                className="field"
+                placeholder="Поиск упражнения..."
+                value={programSearch}
+                onChange={e => setProgramSearch(e.target.value)}
+              />
+            </div>
+
+            {!showProgramCustomEx && (
+              <button className="add-set" style={{ marginBottom: 10 }} onClick={() => setShowProgramCustomEx(true)}>
+                <Plus size={15} /> Добавить своё упражнение
+              </button>
+            )}
+
+            {showProgramCustomEx && (
+              <div className="program-custom-form">
+                <input
+                  className="field"
+                  placeholder="Название упражнения"
+                  value={programCustomExName}
+                  onChange={e => setProgramCustomExName(e.target.value)}
+                  maxLength={80}
+                />
+                <input
+                  className="field"
+                  placeholder="Категория (например, Кардио)"
+                  value={programCustomExCategory}
+                  onChange={e => setProgramCustomExCategory(e.target.value)}
+                  list="all-categories"
+                />
+                <div className="program-custom-actions">
+                  <button className="button button-secondary" onClick={() => { setShowProgramCustomEx(false); setProgramCustomExName(''); setProgramCustomExCategory(CATEGORIES[0]); }}>
+                    Отмена
+                  </button>
+                  <button className="button button-primary" onClick={addCustomExerciseFromProgram}>
+                    <Plus size={15} /> Добавить
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="selection-list">
+              {filteredProgramExercises.length === 0 && <div className="picker-empty">Ничего не найдено</div>}
+              {filteredProgramExercises.map(e => (
+                <label key={e.id} className="selection-row">
+                  <input
+                    type="checkbox"
+                    checked={programExerciseIds.includes(e.id)}
+                    onChange={() => toggleProgramExercise(e.id)}
+                  />
+                  <span>{e.name}<small>{normalizeMuscle(e.muscle)} · {e.equipment}</small></span>
+                </label>
+              ))}
+            </div>
+
+            <button className="button button-primary full-width" onClick={addProgram}>
+              <Save size={16} /> {editingProgramId ? 'Сохранить изменения' : 'Сохранить программу'}
+            </button>
           </div>}
-          {state.programs.length ? <div className="program-list">{state.programs.map(p => <article className="panel program-card" key={p.id}><div className="program-icon"><BookOpen size={20} /></div><div className="program-main"><h3>{p.name}</h3><p>{p.exerciseIds.length} упражнений · создана {localDate(p.createdAt)}</p><div className="program-exercises">{state.exercises.filter(e => p.exerciseIds.includes(e.id)).slice(0, 4).map(e => e.name).join(' · ')}</div><button className="button button-primary" onClick={() => startWorkout(p)}>Начать программу ↗</button></div><button className="icon-button subtle" aria-label="Удалить программу" onClick={() => { if (window.confirm(`Удалить программу «${p.name}»?`)) setState(s => ({ ...s, programs: s.programs.filter(x => x.id !== p.id) })); }}><Trash2 size={16} /></button></article>)}</div> : <Empty title="Программ пока нет" text="Создай шаблон. Он не изменит текущую тренировку, пока ты сам его не запустишь." />}
+
+          {state.programs.length ? <div className="program-list">{state.programs.map(p => <article className="panel program-card" key={p.id}>
+            <div className="program-icon"><BookOpen size={20} /></div>
+            <div className="program-main">
+              <h3>{p.name}</h3>
+              <p>{p.exerciseIds.length} упражнений · создана {localDate(p.createdAt)}</p>
+              {p.note && <div className="program-note">{p.note}</div>}
+              <div className="program-exercises">{state.exercises.filter(e => p.exerciseIds.includes(e.id)).slice(0, 4).map(e => e.name).join(' · ')}</div>
+              <div className="program-actions">
+                <button className="button button-primary" onClick={() => startWorkout(p)}>Начать ↗</button>
+                <button className="icon-button subtle" aria-label="Редактировать" onClick={() => startEditProgram(p)}><Pencil size={15} /></button>
+                <button className="icon-button subtle" aria-label="Удалить" onClick={() => { if (window.confirm(`Удалить программу «${p.name}»?`)) setState(s => ({ ...s, programs: s.programs.filter(x => x.id !== p.id) })); }}><Trash2 size={15} /></button>
+              </div>
+            </div>
+          </article>)}</div> : <Empty title="Программ пока нет" text="Создай шаблон. Он не изменит текущую тренировку, пока ты сам его не запустишь." />}
         </section>}
 
         {tab === 'programs' && programsView === 'library' && <section>
@@ -591,9 +817,13 @@ export default function App() {
                 <input className="field" value={exerciseName} onChange={e => setExerciseName(e.target.value)} placeholder="Например, Тяга к поясу" maxLength={60} />
               </label>
               <label className="field-label">Категория
-                <select className="field" value={exerciseMuscle} onChange={e => setExerciseMuscle(e.target.value)}>
-                  {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-                </select>
+                <input
+                  className="field"
+                  value={exerciseMuscle}
+                  onChange={e => setExerciseMuscle(e.target.value)}
+                  list="all-categories"
+                  placeholder="Выбери или введи свою"
+                />
               </label>
               <button className="button button-primary full-width" onClick={addCustomExercise}><Plus size={16} /> Добавить в библиотеку</button>
             </div>
@@ -838,9 +1068,13 @@ export default function App() {
             <div className="picker-add-custom">
               <p className="picker-add-label">Нет в библиотеке? Добавить «{pickerQuery.trim()}»</p>
               <div className="picker-add-row">
-                <select className="picker-add-category" value={pickerNewCategory} onChange={e => setPickerNewCategory(e.target.value)}>
-                  {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-                </select>
+                <input
+                  className="picker-add-category"
+                  value={pickerNewCategory}
+                  onChange={e => setPickerNewCategory(e.target.value)}
+                  list="all-categories"
+                  placeholder="Категория"
+                />
                 <button className="picker-add-button" onClick={() => addCustomInPicker(pickerQuery)}><Plus size={16} /> Добавить</button>
               </div>
             </div>
@@ -848,6 +1082,37 @@ export default function App() {
           <div className="picker-list">{filteredExercises.map(e => <button key={e.id} className="picker-row" onClick={() => addExerciseToWorkout(e)}><span><b>{e.name}</b><small>{normalizeMuscle(e.muscle)} · {e.equipment}</small></span><Plus size={18} /></button>)}{filteredExercises.length === 0 && <Empty title="Ничего не найдено" text="Введи название — можно добавить как своё упражнение." />}</div>
         </section>
       </div>}
+
+      {historyPickerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setHistoryPickerOpen(false); }}>
+        <section className="picker-modal" role="dialog" aria-modal="true" aria-labelledby="history-title">
+          <div className="modal-head">
+            <div>
+              <p className="eyebrow">ИСТОРИЯ</p>
+              <h2 id="history-title">Повторить тренировку</h2>
+            </div>
+            <button className="icon-button" onClick={() => setHistoryPickerOpen(false)} aria-label="Закрыть">
+              <X size={20} />
+            </button>
+          </div>
+          <p className="picker-hint">Упражнения и веса скопируются. Галочки и заметки — нет.</p>
+          <div className="picker-list">
+            {state.workouts.length === 0 && <Empty title="История пуста" text="Заверши тренировку, чтобы она появилась здесь." />}
+            {state.workouts.map(w => (
+              <button key={w.id} className="picker-row" onClick={() => { setHistoryPickerOpen(false); startFromWorkout(w); }}>
+                <span>
+                  <b>{w.name}</b>
+                  <small>{localDate(w.endedAt)} · {w.exercises.length} упр. · {setCount(w)} подходов</small>
+                </span>
+                <RefreshCw size={16} />
+              </button>
+            ))}
+          </div>
+        </section>
+      </div>}
+
+      <datalist id="all-categories">
+        {allCategories.map(c => <option key={c} value={c} />)}
+      </datalist>
 
       {toast && <div className="toast" role="status">{toast}</div>}
     </div>
