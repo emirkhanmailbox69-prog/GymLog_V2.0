@@ -17,36 +17,46 @@ export function initialState(): AppState {
   };
 }
 
+/**
+ * Нормализует любой частичный/старый стейт до валидного AppState.
+ * Используется при загрузке из localStorage, из Firestore и из import JSON.
+ */
+export function ensureState(state: Partial<AppState> | null | undefined): AppState {
+  const defaults = initialState();
+  if (!state || typeof state !== 'object') return defaults;
+  return {
+    ...defaults,
+    ...state,
+    profile: { ...defaults.profile, ...(state.profile || {}) },
+    settings: { ...defaults.settings, ...(state.settings || {}) },
+    customCategories: Array.isArray(state.customCategories) ? state.customCategories : [],
+    exercises: Array.isArray(state.exercises) && state.exercises.length > 0 ? state.exercises : defaults.exercises,
+    workouts: Array.isArray(state.workouts) ? state.workouts : [],
+    programs: Array.isArray(state.programs) ? state.programs : []
+  };
+}
+
 export function loadState(): AppState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return initialState();
     const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object' || !('schemaVersion' in parsed) || parsed.schemaVersion !== 1) {
+    if (!parsed || typeof parsed !== 'object' || !('schemaVersion' in parsed) || (parsed as { schemaVersion: unknown }).schemaVersion !== 1) {
       return initialState();
     }
     const value = parsed as Partial<AppState>;
-    const defaults = initialState();
+    const normalized = ensureState(value);
 
-    let exercises = Array.isArray(value.exercises) ? value.exercises : defaults.exercises;
+    let exercises = normalized.exercises;
 
     if (!localStorage.getItem(SEED_FLAG)) {
       const existingIds = new Set(exercises.map(e => e.id));
-      const toAdd = defaults.exercises.filter(e => !existingIds.has(e.id));
+      const toAdd = starterExercises.filter(e => !existingIds.has(e.id));
       if (toAdd.length) exercises = [...exercises, ...toAdd];
       localStorage.setItem(SEED_FLAG, '1');
     }
 
-    return {
-      ...defaults,
-      ...value,
-      profile: { ...defaults.profile, ...value.profile },
-      settings: { ...defaults.settings, ...value.settings },
-      exercises,
-      programs: Array.isArray(value.programs) ? value.programs : [],
-      workouts: Array.isArray(value.workouts) ? value.workouts : [],
-      customCategories: Array.isArray(value.customCategories) ? value.customCategories : []
-    };
+    return { ...normalized, exercises };
   } catch {
     return initialState();
   }
