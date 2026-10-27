@@ -7,7 +7,13 @@ export type Workout = {
 };
 export type ActiveWorkout = { id: string; name: string; startedAt: number; exercises: WorkoutExercise[] };
 export type Exercise = { id: string; name: string; muscle: string; equipment: string };
-export type Program = { id: string; name: string; exerciseIds: string[]; createdAt: number };
+export type Program = {
+  id: string;
+  name: string;
+  note?: string;
+  exerciseIds: string[];
+  createdAt: number;
+};
 export type AppState = {
   schemaVersion: 1;
   profile: { name: string; bodyWeight: string };
