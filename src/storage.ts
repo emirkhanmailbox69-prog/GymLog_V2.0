@@ -12,6 +12,7 @@ export function initialState(): AppState {
     activeWorkout: null,
     exercises: starterExercises,
     programs: [],
+    customCategories: [],
     settings: { restSeconds: 90 }
   };
 }
@@ -24,7 +25,7 @@ export function loadState(): AppState {
     if (!parsed || typeof parsed !== 'object' || !('schemaVersion' in parsed) || parsed.schemaVersion !== 1) {
       return initialState();
     }
-    const value = parsed as AppState;
+    const value = parsed as Partial<AppState>;
     const defaults = initialState();
 
     let exercises = Array.isArray(value.exercises) ? value.exercises : defaults.exercises;
@@ -43,7 +44,8 @@ export function loadState(): AppState {
       settings: { ...defaults.settings, ...value.settings },
       exercises,
       programs: Array.isArray(value.programs) ? value.programs : [],
-      workouts: Array.isArray(value.workouts) ? value.workouts : []
+      workouts: Array.isArray(value.workouts) ? value.workouts : [],
+      customCategories: Array.isArray(value.customCategories) ? value.customCategories : []
     };
   } catch {
     return initialState();
@@ -60,36 +62,11 @@ export function saveState(state: AppState): boolean {
 }
 
 export function downloadBackup(state: AppState): void {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-
-  const totalVolume = state.workouts.reduce((n, w) =>
-    n + w.exercises.reduce((m, e) =>
-      m + e.sets.reduce((s, set) =>
-        s + (Number(set.weight) || 0) * (Number(set.reps) || 0) * (set.done ? 1 : 0), 0), 0), 0);
-
-  const summary = {
-    workoutsCount: state.workouts.length,
-    programsCount: state.programs.length,
-    exercisesCount: state.exercises.length,
-    totalVolume: Math.round(totalVolume),
-    xp: state.workouts.reduce((n, w) => n + w.earnedXp, 0)
-  };
-
-  const payload = {
-    app: 'GymLog',
-    schemaVersion: 1,
-    exportedAt: now.toISOString(),
-    summary,
-    state
-  };
-
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ app: 'GymLog', schemaVersion: 1, exportedAt: new Date().toISOString(), state }, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `gymlog-backup-${stamp}.json`;
+  link.download = `gymlog-backup-${new Date().toISOString().slice(0, 10)}.json`;
   link.click();
   URL.revokeObjectURL(url);
 }
