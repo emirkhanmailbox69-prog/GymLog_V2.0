@@ -565,3 +565,94 @@ h3{font:600 16px/1.3 -apple-system,sans-serif;margin-bottom:6px}
   font-size: 12px;
   color: var(--muted);
 }
+/* ===== CategorySelect ===== */
+.category-create {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+}
+.category-create-actions {
+  display: flex;
+  gap: 8px;
+}
+.category-create-actions .button {
+  flex: 1;
+  min-height: 38px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+/* ===== Управление категорией в библиотеке ===== */
+.category-header-wrap {
+  display: flex;
+  align-items: stretch;
+}
+.category-header-wrap .category-header {
+  flex: 1;
+  border-radius: 14px 0 0 14px;
+}
+.category-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px 0 4px;
+}
+.category-tools .icon-button.subtle {
+  width: 28px;
+  height: 28px;
+}
+
+.library-row-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* ===== Финиш тренировки ===== */
+.finish-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+  background: radial-gradient(circle at center, rgba(208, 244, 119, 0.55) 0%, rgba(208, 244, 119, 0.15) 35%, transparent 70%);
+  animation: finish-flash 0.7s ease-out forwards;
+}
+@keyframes finish-flash {
+  0%   { opacity: 0; transform: scale(0.6); }
+  25%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.6); }
+}
+.button.is-finishing {
+  animation: btn-finish-pulse 0.7s ease;
+}
+@keyframes btn-finish-pulse {
+  0%   { transform: scale(1); box-shadow: 0 0 0 rgba(208, 244, 119, 0); }
+  30%  { transform: scale(1.06); box-shadow: 0 0 40px rgba(208, 244, 119, 0.9); }
+  100% { transform: scale(1); box-shadow: 0 0 0 rgba(208, 244, 119, 0); }
+}
+.xp-pop {
+  position: fixed;
+  top: 42%;
+  left: 50%;
+  z-index: 110;
+  pointer-events: none;
+  font: 800 clamp(48px, 14vw, 72px)/1 -apple-system, BlinkMacSystemFont, sans-serif;
+  color: var(--lime);
+  letter-spacing: -2px;
+  font-variant-numeric: tabular-nums;
+  text-shadow:
+    0 0 50px rgba(208, 244, 119, 0.7),
+    0 0 20px rgba(208, 244, 119, 0.4),
+    0 6px 30px rgba(0, 0, 0, 0.6);
+  animation: xp-pop 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes xp-pop {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+  20%  { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+  35%  { transform: translate(-50%, -50%) scale(1); }
+  75%  { opacity: 1; transform: translate(-50%, -55%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -90%) scale(0.95); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .finish-flash, .button.is-finishing, .xp-pop { animation: none !important; }
+}
