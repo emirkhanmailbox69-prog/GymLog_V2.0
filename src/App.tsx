@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Activity, Award, BarChart3, BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight,
-  ChevronUp, CircleUserRound, Cloud, Clock3, Dumbbell, FileDown, Home, Plus, Save,
+  ChevronUp, CircleUserRound, Cloud, Clock3, Dumbbell, FileDown, Home, MessageSquare, Plus, Save,
   ShieldCheck, Star, Target, Trash2, Trophy, X, Zap
 } from 'lucide-react';
 import type { User } from 'firebase/auth';
@@ -20,7 +20,23 @@ const makeWorkoutExercise = (exercise: Exercise): WorkoutExercise => ({
   sets: [emptySet(), emptySet(), emptySet()], collapsed: false
 });
 const localDate = (timestamp: number) => new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }).format(timestamp);
+const localTime = (timestamp: number) => new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' }).format(timestamp);
 const durationMinutes = (start: number, end: number) => Math.max(1, Math.round((end - start) / 60000));
+const formatDuration = (start: number, end: number): string => {
+  const mins = Math.max(1, Math.round((end - start) / 60000));
+  if (mins < 60) return `${mins} мин`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${h} ч` : `${h} ч ${m} мин`;
+};
+const formatTimer = (ms: number): string => {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
+};
 const setCount = (w: { exercises: WorkoutExercise[] }) => w.exercises.reduce((n, e) => n + e.sets.filter(s => s.done).length, 0);
 const volume = (w: { exercises: WorkoutExercise[] }) => w.exercises.reduce((n, e) => n + e.sets.reduce((m, s) => m + (Number(s.weight) || 0) * (Number(s.reps) || 0) * (s.done ? 1 : 0), 0), 0);
 const totalXp = (workouts: Workout[]) => workouts.reduce((sum, w) => sum + w.earnedXp, 0);
@@ -64,6 +80,8 @@ export default function App() {
   const [showProgramBuilder, setShowProgramBuilder] = useState(false);
   const [exerciseName, setExerciseName] = useState('');
   const [exerciseMuscle, setExerciseMuscle] = useState(CATEGORIES[0]);
+  const [openNotes, setOpenNotes] = useState<Record<string, boolean>>({});
+  const [now, setNow] = useState(() => Date.now());
 
   const [programsView, setProgramsView] = useState<'list' | 'library'>('list');
   const [libraryTab, setLibraryTab] = useState<'browse' | 'add'>('browse');
@@ -79,8 +97,15 @@ export default function App() {
     return unsubscribe;
   }, []);
 
-   const { lastSyncedAt, isSyncing, syncError, forceSync } = useCloudSync(user, state, setState);
-  
+  const { lastSyncedAt, isSyncing, syncError, forceSync } = useCloudSync(user, state, setState);
+
+  useEffect(() => {
+    if (!state.activeWorkout) return;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [state.activeWorkout?.id]);
+
   useEffect(() => {
     if (tab !== 'programs') {
       setProgramsView('list');
@@ -93,7 +118,7 @@ export default function App() {
     window.setTimeout(() => setToast(''), 2600);
   }
 
-      async function handleLinkGoogle() {
+  async function handleLinkGoogle() {
     try {
       const linkedUser = await linkAnonymousWithGoogle();
       setUser(linkedUser);
@@ -201,6 +226,11 @@ export default function App() {
     }) }));
   }
 
+  function toggleNote(exerciseId: string, setId: string) {
+    const key = `${exerciseId}-${setId}`;
+    setOpenNotes(prev => ({ ...prev, [key]: !prev[key] }));
+  }
+
   function finishWorkout() {
     if (!currentWorkout) return;
     const earnedXp = xpFor(currentWorkout);
@@ -221,7 +251,8 @@ export default function App() {
   }
 
   function clearHistory() {
-    if (!window.confirm('Удалить ВСЮ историю тренировок? Это действие нельзя отменить без резервной копии.')) return;
+    if (!window.confirm('Удалить ВСЮ историю тренировок? Это действие нельзя отменить.')) return;
+    if (!window.confirm('Точно? Все тренировки, XP и статистика будут потеряны навсегда.\n\nСовет: перед удалением сделайте экспорт JSON в профиле.')) return;
     setState(s => ({ ...s, workouts: [] }));
     notify('История очищена. XP и статистика пересчитаны.');
   }
@@ -277,65 +308,64 @@ export default function App() {
   }
 
   function importData(file?: File) {
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const parsed: unknown = JSON.parse(String(reader.result));
-      if (!parsed || typeof parsed !== 'object' || !('app' in parsed) || parsed.app !== 'GymLog' || !('state' in parsed)) {
-        throw new Error('Файл не похож на резервную копию GymLog.');
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed: unknown = JSON.parse(String(reader.result));
+        if (!parsed || typeof parsed !== 'object' || !('app' in parsed) || parsed.app !== 'GymLog' || !('state' in parsed)) {
+          throw new Error('Файл не похож на резервную копию GymLog.');
+        }
+        const raw = parsed as {
+          exportedAt?: string;
+          summary?: { workoutsCount?: number; totalVolume?: number; xp?: number };
+          state: AppState;
+        };
+        const candidate = raw.state;
+        if (candidate.schemaVersion !== 1 || !Array.isArray(candidate.workouts) || !Array.isArray(candidate.exercises)) {
+          throw new Error('Структура резервной копии не поддерживается.');
+        }
+
+        const currentSummary = {
+          workouts: state.workouts.length,
+          xp: state.workouts.reduce((n, w) => n + w.earnedXp, 0)
+        };
+        const fileDate = raw.exportedAt
+          ? new Date(raw.exportedAt).toLocaleString('ru-RU', {
+              day: 'numeric', month: 'short', year: 'numeric',
+              hour: '2-digit', minute: '2-digit'
+            })
+          : 'дата не указана';
+        const fileSummary = raw.summary
+          ? `тренировок: ${raw.summary.workoutsCount ?? '?'}, XP: ${raw.summary.xp ?? '?'}`
+          : `тренировок: ${candidate.workouts.length}`;
+
+        const message =
+          `Файл создан: ${fileDate}\n` +
+          `Содержимое файла: ${fileSummary}\n` +
+          `\n` +
+          `Текущее состояние: тренировок: ${currentSummary.workouts}, XP: ${currentSummary.xp}\n` +
+          `\n` +
+          `Импорт ЗАМЕНИТ текущие данные содержимым файла.\n` +
+          `Перед заменой будет автоматически скачан бэкап текущего состояния.\n` +
+          `\n` +
+          `Продолжить?`;
+
+        if (!window.confirm(message)) return;
+
+        downloadBackup(state);
+        notify('Бэкап текущих данных сохранён. Применяю импорт…');
+
+        setTimeout(() => {
+          setState(candidate);
+          notify('Резервная копия импортирована.');
+        }, 300);
+      } catch (error) {
+        notify(error instanceof Error ? error.message : 'Не удалось импортировать файл.');
       }
-      const raw = parsed as {
-        exportedAt?: string;
-        summary?: { workoutsCount?: number; totalVolume?: number; xp?: number };
-        state: AppState;
-      };
-      const candidate = raw.state;
-      if (candidate.schemaVersion !== 1 || !Array.isArray(candidate.workouts) || !Array.isArray(candidate.exercises)) {
-        throw new Error('Структура резервной копии не поддерживается.');
-      }
-
-      const currentSummary = {
-        workouts: state.workouts.length,
-        xp: state.workouts.reduce((n, w) => n + w.earnedXp, 0)
-      };
-      const fileDate = raw.exportedAt
-        ? new Date(raw.exportedAt).toLocaleString('ru-RU', {
-            day: 'numeric', month: 'short', year: 'numeric',
-            hour: '2-digit', minute: '2-digit'
-          })
-        : 'дата не указана';
-      const fileSummary = raw.summary
-        ? `тренировок: ${raw.summary.workoutsCount ?? '?'}, XP: ${raw.summary.xp ?? '?'}`
-        : `тренировок: ${candidate.workouts.length}`;
-
-      const message =
-        `Файл создан: ${fileDate}\n` +
-        `Содержимое файла: ${fileSummary}\n` +
-        `\n` +
-        `Текущее состояние: тренировок: ${currentSummary.workouts}, XP: ${currentSummary.xp}\n` +
-        `\n` +
-        `Импорт ЗАМЕНИТ текущие данные содержимым файла.\n` +
-        `Перед заменой будет автоматически скачан бэкап текущего состояния.\n` +
-        `\n` +
-        `Продолжить?`;
-
-      if (!window.confirm(message)) return;
-
-      // Автобэкап текущего состояния ПЕРЕД заменой
-      downloadBackup(state);
-      notify('Бэкап текущих данных сохранён. Применяю импорт…');
-
-      setTimeout(() => {
-        setState(candidate);
-        notify('Резервная копия импортирована.');
-      }, 300);
-    } catch (error) {
-      notify(error instanceof Error ? error.message : 'Не удалось импортировать файл.');
-    }
-  };
-  reader.readAsText(file);
-}
+    };
+    reader.readAsText(file);
+  }
 
   function updateProfile(name: string, bodyWeight: string) {
     setState(s => ({ ...s, profile: { name, bodyWeight } }));
@@ -421,7 +451,11 @@ export default function App() {
             <button className="button button-primary" onClick={() => startWorkout()}>Начать с нуля</button>
             {state.programs.length > 0 && <div className="quick-programs">{state.programs.map(p => <button key={p.id} className="button button-secondary" onClick={() => startWorkout(p)}>{p.name} <span>↗</span></button>)}</div>}
           </div> : <>
-            <div className="workout-meta"><div><Clock3 size={16} /><span>Начата {localDate(currentWorkout.startedAt)}</span></div><span>{currentWorkout.exercises.length} упражнений</span></div>
+            <div className="workout-meta"><div><Clock3 size={16} /><span>Начата {localDate(currentWorkout.startedAt)}, {localTime(currentWorkout.startedAt)}</span></div><span>{currentWorkout.exercises.length} упражнений</span></div>
+            <div className="workout-timer">
+              <span className="workout-timer-label">Длительность</span>
+              <span className="workout-timer-value">{formatTimer(now - currentWorkout.startedAt)}</span>
+            </div>
             <label className="field-label">Название тренировки<input className="field" value={currentWorkout.name} onChange={e => patchActive(a => ({ ...a, name: e.target.value }))} maxLength={60} /></label>
             <div className="section-heading"><h2>Упражнения</h2><button className="icon-button" onClick={() => setPickerOpen(true)} aria-label="Добавить упражнение"><Plus size={20} /></button></div>
             {currentWorkout.exercises.length === 0 && <Empty title="Пока нет упражнений" text="Добавь первое упражнение из библиотеки." />}
@@ -433,13 +467,38 @@ export default function App() {
                 <button className="icon-button subtle" aria-label="Удалить упражнение" onClick={() => patchActive(a => ({ ...a, exercises: a.exercises.filter(e => e.id !== exercise.id) }))}><X size={17} /></button>
               </div>
               {!exercise.collapsed && <div className="sets">
-                <div className="set-header"><span>СЕТ</span><span>ВЕС, КГ</span><span>ПОВТОРЫ</span><span>✓</span></div>
-                {exercise.sets.map((set, i) => <div className={`set-row ${set.done ? 'set-done' : ''}`} key={set.id}>
-                  <span className="set-index">{i + 1}</span>
-                  <input aria-label={`Вес, подход ${i + 1}`} className="set-input" type="number" min="0" step="0.5" placeholder="—" value={set.weight} onChange={e => updateSet(exercise.id, set.id, { weight: e.target.value })} />
-                  <input aria-label={`Повторы, подход ${i + 1}`} className="set-input" type="number" min="0" step="1" placeholder="—" value={set.reps} onChange={e => updateSet(exercise.id, set.id, { reps: e.target.value })} />
-                  <button className={`set-check ${set.done ? 'checked' : ''}`} aria-label={set.done ? 'Снять отметку подхода' : 'Отметить подход выполненным'} onClick={() => updateSet(exercise.id, set.id, { done: !set.done })}>{set.done && <Check size={16} />}</button>
-                </div>)}
+                <div className="set-header"><span>СЕТ</span><span>ВЕС, КГ</span><span>ПОВТОРЫ</span><span></span><span>✓</span></div>
+                {exercise.sets.map((set, i) => {
+                  const noteKey = `${exercise.id}-${set.id}`;
+                  const showNote = openNotes[noteKey] || Boolean(set.note && set.note.trim());
+                  return (
+                    <div key={set.id}>
+                      <div className={`set-row ${set.done ? 'set-done' : ''}`}>
+                        <span className="set-index">{i + 1}</span>
+                        <input aria-label={`Вес, подход ${i + 1}`} className="set-input" type="number" min="0" step="0.5" placeholder="—" value={set.weight} onChange={e => updateSet(exercise.id, set.id, { weight: e.target.value })} />
+                        <input aria-label={`Повторы, подход ${i + 1}`} className="set-input" type="number" min="0" step="1" placeholder="—" value={set.reps} onChange={e => updateSet(exercise.id, set.id, { reps: e.target.value })} />
+                        <button
+                          className={`set-note-toggle ${set.note && set.note.trim() ? 'has-note' : ''}`}
+                          aria-label={showNote ? 'Скрыть заметку' : 'Добавить заметку'}
+                          onClick={() => toggleNote(exercise.id, set.id)}
+                        >
+                          <MessageSquare size={14} />
+                        </button>
+                        <button className={`set-check ${set.done ? 'checked' : ''}`} aria-label={set.done ? 'Снять отметку подхода' : 'Отметить подход выполненным'} onClick={() => updateSet(exercise.id, set.id, { done: !set.done })}>{set.done && <Check size={16} />}</button>
+                      </div>
+                      {showNote && (
+                        <textarea
+                          className="set-note-input"
+                          placeholder="Заметка к подходу…"
+                          value={set.note || ''}
+                          onChange={e => updateSet(exercise.id, set.id, { note: e.target.value })}
+                          rows={1}
+                          maxLength={300}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
                 <button className="add-set" onClick={() => patchActive(a => ({ ...a, exercises: a.exercises.map(e => e.id === exercise.id ? { ...e, sets: [...e.sets, emptySet()] } : e) }))}><Plus size={15} /> Добавить подход</button>
               </div>}
             </article>)}
@@ -544,8 +603,31 @@ export default function App() {
         {tab === 'history' && <section>
           <p className="eyebrow">ТВОЯ ДИНАМИКА</p><h1>История.</h1><p className="intro">Все завершённые тренировки и показатели, пересчитываемые из истории.</p>
           <div className="stats-grid"><Metric label="ТРЕНИРОВОК" value={String(state.workouts.length)} note="всего" /><Metric label="ОБЪЁМ" value={fmt(state.workouts.reduce((n, w) => n + volume(w), 0))} note="кг × повторы" /><Metric label="ВРЕМЯ" value={String(state.workouts.reduce((n, w) => n + durationMinutes(w.startedAt, w.endedAt), 0))} note="минут" /><Metric label="XP" value={String(xp)} note={`уровень ${level}`} /></div>
-          {state.workouts.length > 0 && <button className="text-danger clear-history" onClick={clearHistory}>Очистить всю историю</button>}
-          {state.workouts.length ? <div className="history-list">{state.workouts.map(w => <article className="panel history-card" key={w.id}><div className="history-top"><div><h3>{w.name}</h3><p>{localDate(w.endedAt)} · {durationMinutes(w.startedAt, w.endedAt)} мин</p></div><button className="icon-button subtle" aria-label="Удалить тренировку" onClick={() => deleteWorkout(w.id)}><Trash2 size={16} /></button></div><div className="history-metrics"><span><Dumbbell size={14} /> {w.exercises.length} упр.</span><span><Check size={14} /> {setCount(w)} подходов</span><span><Activity size={14} /> {fmt(volume(w))} кг</span><strong>+{w.earnedXp} XP</strong></div><details><summary>Упражнения и подходы</summary>{w.exercises.map(e => <div className="history-exercise" key={e.id}><b>{e.name}</b><span>{e.sets.filter(s => s.done).map(s => `${s.weight || 0} кг × ${s.reps || 0}`).join(' · ') || 'Нет отмеченных подходов'}</span></div>)}</details></article>)}</div> : <Empty title="История пока пуста" text="Заверши первую тренировку. Она появится здесь вместе с деталями подходов." />}
+          {state.workouts.length ? <div className="history-list">{state.workouts.map(w => <article className="panel history-card" key={w.id}><div className="history-top"><div><h3>{w.name}</h3><p>{localDate(w.endedAt)}, {localTime(w.startedAt)}–{localTime(w.endedAt)} · {formatDuration(w.startedAt, w.endedAt)}</p></div><button className="icon-button subtle" aria-label="Удалить тренировку" onClick={() => deleteWorkout(w.id)}><Trash2 size={16} /></button></div><div className="history-metrics"><span><Dumbbell size={14} /> {w.exercises.length} упр.</span><span><Check size={14} /> {setCount(w)} подходов</span><span><Activity size={14} /> {fmt(volume(w))} кг</span><strong>+{w.earnedXp} XP</strong></div><details><summary>Упражнения и подходы</summary>{w.exercises.map(e => {
+            const doneSets = e.sets.filter(s => s.done);
+            return (
+              <div className="history-exercise" key={e.id}>
+                <b>{e.name}</b>
+                {doneSets.length === 0 ? (
+                  <span className="history-empty-note">Нет отмеченных подходов</span>
+                ) : (
+                  <div className="history-sets-list">
+                    {doneSets.map((s, idx) => (
+                      <div key={s.id} className="history-set">
+                        <span className="history-set-main">Подход {idx + 1}: {s.weight || 0} кг × {s.reps || 0}</span>
+                        {s.note && s.note.trim() && (
+                          <span className="history-set-note">{s.note}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}</details></article>)}</div> : <Empty title="История пока пуста" text="Заверши первую тренировку. Она появится здесь вместе с деталями подходов." />}
+          {state.workouts.length > 0 && (
+            <button className="text-danger clear-history-bottom" onClick={clearHistory}>Очистить всю историю</button>
+          )}
         </section>}
 
         {tab === 'quest' && <section>
@@ -631,7 +713,7 @@ export default function App() {
             </div>
           </div>
 
-                    <div className="settings-section">
+          <div className="settings-section">
             <p className="settings-header">Синхронизация</p>
             <div className="settings-group">
               <div className="setting-row">
@@ -723,7 +805,7 @@ export default function App() {
             </div>
           </div>
 
-         <div className="notice">Облачная синхронизация привязана к устройству. Чтобы переносить данные между телефонами, привяжите Google-аккаунт (кнопка выше). Экспорт JSON — независимая копия на диск.</div>
+          <div className="notice">Облачная синхронизация привязана к устройству. Чтобы переносить данные между телефонами, привяжите Google-аккаунт (кнопка выше). Экспорт JSON — независимая копия на диск.</div>
         </section>}
       </main>
 
