@@ -21,5 +21,6 @@ export type AppState = {
   activeWorkout: ActiveWorkout | null;
   exercises: Exercise[];
   programs: Program[];
+  customCategories: string[];
   settings: { restSeconds: number };
 };
