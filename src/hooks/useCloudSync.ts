@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import type { User } from 'firebase/auth';
 import type { AppState } from '../types';
 import { subscribeToState, pushStateToCloud } from '../firebase';
+import { ensureState } from '../storage';
 
 export type CloudSyncStatus = {
   lastSyncedAt: number | null;
@@ -48,7 +49,7 @@ export function useCloudSync(
         initialSyncDone.current = true;
         if (remoteState) {
           isRemoteUpdate.current = true;
-          setState(remoteState);
+          setState(ensureState(remoteState));
           setLastSyncedAt(Date.now());
         } else {
           doSync(user.uid, stateRef.current);
@@ -57,7 +58,7 @@ export function useCloudSync(
       }
       if (remoteState) {
         isRemoteUpdate.current = true;
-        setState(remoteState);
+        setState(ensureState(remoteState));
         setLastSyncedAt(Date.now());
       }
     });
