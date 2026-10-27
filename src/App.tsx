@@ -7,6 +7,7 @@ import {
 import type { User } from 'firebase/auth';
 import type { ActiveWorkout, AppState, Exercise, Program, SetEntry, Tab, Workout, WorkoutExercise } from './types';
 import { loadState, saveState, downloadBackup } from './storage';
+import { starterExercises } from './data';
 import {
   firebaseConfigured, subscribeToAuth, ensureAnonymousAuth,
   linkAnonymousWithGoogle, signInWithGoogleExisting, logOut
@@ -57,7 +58,7 @@ const formatSyncTime = (ts: number | null): string => {
   return d.toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 };
 
-const CATEGORIES = ['Ноги и ягодицы', 'Спина', 'Грудь', 'Плечи (Дельты)', 'Руки (Бицепс и Трицепс)', 'Пресс и кор'];
+const DEFAULT_CATEGORIES = ['Ноги и ягодицы', 'Спина', 'Грудь', 'Плечи (Дельты)', 'Руки (Бицепс и Трицепс)', 'Пресс и кор'];
 const MUSCLE_MAP: Record<string, string> = {
   'Ноги': 'Ноги и ягодицы',
   'Плечи': 'Плечи (Дельты)',
@@ -67,38 +68,58 @@ const MUSCLE_MAP: Record<string, string> = {
 };
 const normalizeMuscle = (m: string) => MUSCLE_MAP[m] || m;
 
+const DEFAULT_EXERCISE_IDS = new Set(starterExercises.map(e => e.id));
+const isDefaultExercise = (id: string) => DEFAULT_EXERCISE_IDS.has(id);
+
 export default function App() {
   const [state, setState] = useState<AppState>(() => loadState());
   const [user, setUser] = useState<User | null>(null);
   const [tab, setTab] = useState<Tab>('home');
   const [toast, setToast] = useState('');
+
+  // Тренировка
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState('');
-  const [pickerNewCategory, setPickerNewCategory] = useState(CATEGORIES[0]);
+  const [pickerNewCategory, setPickerNewCategory] = useState(DEFAULT_CATEGORIES[0]);
+  const [openNotes, setOpenNotes] = useState<Record<string, boolean>>({});
+  const [now, setNow] = useState(() => Date.now());
+  const [historyPickerOpen, setHistoryPickerOpen] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  const [xpPop, setXpPop] = useState<number | null>(null);
+
+  // Программы
+  const [programsView, setProgramsView] = useState<'list' | 'library'>('list');
+  const [libraryTab, setLibraryTab] = useState<'browse' | 'add'>('browse');
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+  const [showProgramBuilder, setShowProgramBuilder] = useState(false);
+  const [editingProgramId, setEditingProgramId] = useState<string | null>(null);
   const [programName, setProgramName] = useState('');
   const [programNote, setProgramNote] = useState('');
   const [programExerciseIds, setProgramExerciseIds] = useState<string[]>([]);
   const [programSearch, setProgramSearch] = useState('');
   const [programCustomExName, setProgramCustomExName] = useState('');
-  const [programCustomExCategory, setProgramCustomExCategory] = useState(CATEGORIES[0]);
+  const [programCustomExCategory, setProgramCustomExCategory] = useState(DEFAULT_CATEGORIES[0]);
   const [showProgramCustomEx, setShowProgramCustomEx] = useState(false);
-  const [editingProgramId, setEditingProgramId] = useState<string | null>(null);
-  const [showProgramBuilder, setShowProgramBuilder] = useState(false);
+
+  // Библиотека → добавить своё
   const [exerciseName, setExerciseName] = useState('');
-  const [exerciseMuscle, setExerciseMuscle] = useState(CATEGORIES[0]);
-  const [openNotes, setOpenNotes] = useState<Record<string, boolean>>({});
-  const [now, setNow] = useState(() => Date.now());
-  const [historyPickerOpen, setHistoryPickerOpen] = useState(false);
+  const [exerciseMuscle, setExerciseMuscle] = useState(DEFAULT_CATEGORIES[0]);
 
-  const [programsView, setProgramsView] = useState<'list' | 'library'>('list');
-  const [libraryTab, setLibraryTab] = useState<'browse' | 'add'>('browse');
-  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+  // Редактирование упражнения
+  const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
 
+  // Список всех категорий (дефолтные + созданные пользователем)
   const allCategories = useMemo(() => {
-    const set = new Set<string>(CATEGORIES);
-    state.exercises.forEach(e => set.add(normalizeMuscle(e.muscle)));
+    const set = new Set<string>(DEFAULT_CATEGORIES);
+    state.customCategories.forEach(c => set.add(c));
+    state.exercises.forEach(e => {
+      const cat = normalizeMuscle(e.muscle);
+      if (cat) set.add(cat);
+    });
     return Array.from(set);
-  }, [state.exercises]);
+  }, [state.exercises, state.customCategories]);
+
+  const isUserCategory = (cat: string) => !DEFAULT_CATEGORIES.includes(cat);
 
   useEffect(() => {
     if (!saveState(state)) notify('Не удалось сохранить локально. Экспортируй резервную копию.');
@@ -130,6 +151,16 @@ export default function App() {
   function notify(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(''), 2600);
+  }
+
+  function ensureCategoryRegistered(cat: string) {
+    const trimmed = cat.trim();
+    if (!trimmed) return;
+    setState(s => {
+      if (s.customCategories.includes(trimmed)) return s;
+      if (DEFAULT_CATEGORIES.includes(trimmed)) return s;
+      return { ...s, customCategories: [...s.customCategories, trimmed] };
+    });
   }
 
   async function handleLinkGoogle() {
@@ -212,7 +243,7 @@ export default function App() {
   const groupedExercises = useMemo(() => {
     const groups: Record<string, Exercise[]> = {};
     for (const e of state.exercises) {
-      const cat = normalizeMuscle(e.muscle);
+      const cat = normalizeMuscle(e.muscle) || 'Без категории';
       if (!groups[cat]) groups[cat] = [];
       groups[cat].push(e);
     }
@@ -280,16 +311,22 @@ export default function App() {
   }
 
   function finishWorkout() {
-    if (!currentWorkout) return;
+    if (!currentWorkout || finishing) return;
     const earnedXp = xpFor(currentWorkout);
     if (earnedXp === 0) {
       notify('Отметь хотя бы один выполненный подход — пустая тренировка не даёт XP.');
       return;
     }
-    const completed: Workout = { ...currentWorkout, endedAt: Date.now(), earnedXp };
-    setState(s => ({ ...s, workouts: [completed, ...s.workouts], activeWorkout: null }));
-    setTab('home');
-    notify(`Тренировка сохранена · +${earnedXp} XP`);
+    setFinishing(true);
+    window.setTimeout(() => {
+      const completed: Workout = { ...currentWorkout, endedAt: Date.now(), earnedXp };
+      setState(s => ({ ...s, workouts: [completed, ...s.workouts], activeWorkout: null }));
+      setTab('home');
+      setFinishing(false);
+      setXpPop(earnedXp);
+      window.setTimeout(() => setXpPop(null), 1200);
+      notify(`Тренировка сохранена · +${earnedXp} XP`);
+    }, 700);
   }
 
   function deleteWorkout(id: string) {
@@ -312,7 +349,7 @@ export default function App() {
     setProgramExerciseIds([]);
     setProgramSearch('');
     setProgramCustomExName('');
-    setProgramCustomExCategory(CATEGORIES[0]);
+    setProgramCustomExCategory(DEFAULT_CATEGORIES[0]);
     setShowProgramCustomEx(false);
     setShowProgramBuilder(false);
   }
@@ -354,37 +391,35 @@ export default function App() {
 
   function addCustomExerciseFromProgram() {
     const name = programCustomExName.trim();
-    const category = programCustomExCategory.trim();
-    if (!name || !category) {
-      notify('Укажи название и категорию.');
-      return;
-    }
+    if (!name) { notify('Введи название упражнения.'); return; }
     if (state.exercises.some(e => e.name.toLowerCase() === name.toLowerCase())) {
       notify('Такое упражнение уже есть в библиотеке.');
       return;
     }
+    const category = programCustomExCategory.trim();
     const exercise: Exercise = { id: uid(), name, muscle: category, equipment: 'Пользовательское' };
     setState(s => ({ ...s, exercises: [...s.exercises, exercise] }));
+    if (category) ensureCategoryRegistered(category);
     setProgramExerciseIds(ids => [...ids, exercise.id]);
     setProgramCustomExName('');
-    setProgramCustomExCategory(CATEGORIES[0]);
+    setProgramCustomExCategory(DEFAULT_CATEGORIES[0]);
     setShowProgramCustomEx(false);
     notify('Упражнение добавлено и выбрано.');
   }
 
   function addCustomExercise() {
     const name = exerciseName.trim();
-    const category = exerciseMuscle.trim();
     if (!name) { notify('Введи название упражнения.'); return; }
-    if (!category) { notify('Укажи категорию.'); return; }
     if (state.exercises.some(e => e.name.toLowerCase() === name.toLowerCase())) {
       notify('Такое упражнение уже есть в библиотеке.');
       return;
     }
+    const category = exerciseMuscle.trim();
     const exercise: Exercise = { id: uid(), name, muscle: category, equipment: 'Пользовательское' };
     setState(s => ({ ...s, exercises: [...s.exercises, exercise] }));
+    if (category) ensureCategoryRegistered(category);
     setExerciseName('');
-    setExpandedCategories(prev => ({ ...prev, [category]: true }));
+    if (category) setExpandedCategories(prev => ({ ...prev, [normalizeMuscle(category) || 'Без категории']: true }));
     notify('Упражнение добавлено в библиотеку.');
   }
 
@@ -396,10 +431,82 @@ export default function App() {
       addExerciseToWorkout(existing);
       return;
     }
-    const category = pickerNewCategory.trim() || CATEGORIES[0];
+    const category = pickerNewCategory.trim();
     const exercise: Exercise = { id: uid(), name: trimmed, muscle: category, equipment: 'Пользовательское' };
     setState(s => ({ ...s, exercises: [...s.exercises, exercise] }));
+    if (category) ensureCategoryRegistered(category);
     addExerciseToWorkout(exercise);
+  }
+
+  function saveEditedExercise() {
+    if (!editingExercise) return;
+    const name = editingExercise.name.trim();
+    if (!name) { notify('Название не может быть пустым.'); return; }
+    const dup = state.exercises.some(e => e.id !== editingExercise.id && e.name.toLowerCase() === name.toLowerCase());
+    if (dup) { notify('Упражнение с таким названием уже есть.'); return; }
+    const category = editingExercise.muscle.trim();
+    setState(s => ({
+      ...s,
+      exercises: s.exercises.map(e => e.id === editingExercise.id ? { ...e, name, muscle: category } : e)
+    }));
+    if (category) ensureCategoryRegistered(category);
+    setEditingExercise(null);
+    notify('Упражнение сохранено.');
+  }
+
+  function deleteExercise(exercise: Exercise) {
+    if (isDefaultExercise(exercise.id)) {
+      notify('Встроенные упражнения удалять нельзя.');
+      return;
+    }
+    if (!window.confirm(`Удалить упражнение «${exercise.name}» из библиотеки?`)) return;
+    setState(s => ({
+      ...s,
+      exercises: s.exercises.filter(x => x.id !== exercise.id),
+      programs: s.programs.map(p => ({ ...p, exerciseIds: p.exerciseIds.filter(id => id !== exercise.id) }))
+    }));
+    notify('Упражнение удалено.');
+  }
+
+  function renameCategory(oldName: string) {
+    const normalized = normalizeMuscle(oldName);
+    if (!isUserCategory(normalized)) {
+      notify('Встроенные категории нельзя переименовать.');
+      return;
+    }
+    const newName = window.prompt(`Новое название категории «${oldName}»:`, oldName);
+    if (!newName) return;
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === normalized) return;
+    if (allCategories.includes(trimmed)) {
+      notify('Категория с таким названием уже существует.');
+      return;
+    }
+    setState(s => ({
+      ...s,
+      customCategories: s.customCategories.map(c => c === normalized ? trimmed : c),
+      exercises: s.exercises.map(e => normalizeMuscle(e.muscle) === normalized ? { ...e, muscle: trimmed } : e)
+    }));
+    notify('Категория переименована.');
+  }
+
+  function deleteCategory(cat: string) {
+    const normalized = normalizeMuscle(cat);
+    if (!isUserCategory(normalized)) {
+      notify('Встроенные категории удалять нельзя.');
+      return;
+    }
+    const count = state.exercises.filter(e => normalizeMuscle(e.muscle) === normalized).length;
+    const message = count > 0
+      ? `Удалить категорию «${cat}»?\n\nВ ней ${count} упражнений. Они перейдут в «Без категории».`
+      : `Удалить категорию «${cat}»?`;
+    if (!window.confirm(message)) return;
+    setState(s => ({
+      ...s,
+      customCategories: s.customCategories.filter(c => c !== normalized),
+      exercises: s.exercises.map(e => normalizeMuscle(e.muscle) === normalized ? { ...e, muscle: '' } : e)
+    }));
+    notify('Категория удалена.');
   }
 
   function toggleCategory(cat: string) {
@@ -433,6 +540,9 @@ export default function App() {
         if (candidate.schemaVersion !== 1 || !Array.isArray(candidate.workouts) || !Array.isArray(candidate.exercises)) {
           throw new Error('Структура резервной копии не поддерживается.');
         }
+        if (!Array.isArray(candidate.customCategories)) {
+          candidate.customCategories = [];
+        }
 
         const currentSummary = {
           workouts: state.workouts.length,
@@ -460,10 +570,8 @@ export default function App() {
           `Продолжить?`;
 
         if (!window.confirm(message)) return;
-
         downloadBackup(state);
         notify('Бэкап текущих данных сохранён. Применяю импорт…');
-
         setTimeout(() => {
           setState(candidate);
           notify('Резервная копия импортирована.');
@@ -488,7 +596,14 @@ export default function App() {
     { id: 'profile', label: 'Профиль', icon: CircleUserRound }
   ];
 
-  const orderedCategories = allCategories;
+  const orderedCategories = useMemo(() => {
+    const result: string[] = [];
+    const seen = new Set<string>();
+    for (const c of DEFAULT_CATEGORIES) { result.push(c); seen.add(c); }
+    for (const c of state.customCategories) { if (!seen.has(c)) { result.push(c); seen.add(c); } }
+    for (const c of Object.keys(groupedExercises)) { if (!seen.has(c)) { result.push(c); seen.add(c); } }
+    return result;
+  }, [state.customCategories, groupedExercises]);
 
   return (
     <div className="app-shell">
@@ -635,7 +750,7 @@ export default function App() {
               </div>}
             </article>)}
             <button className="button button-secondary full-width" onClick={() => setPickerOpen(true)}><Plus size={17} /> Добавить упражнение</button>
-            <div className="finish-bar"><div><b>{setCount(currentWorkout)}</b><small>выполнено подходов</small></div><button className="button button-primary" onClick={finishWorkout}>Завершить <Check size={17} /></button></div>
+            <div className="finish-bar"><div><b>{setCount(currentWorkout)}</b><small>выполнено подходов</small></div><button className={`button button-primary ${finishing ? 'is-finishing' : ''}`} onClick={finishWorkout} disabled={finishing}>{finishing ? 'Сохраняем…' : <>Завершить <Check size={17} /></>}</button></div>
             <button className="text-danger" onClick={() => { if (window.confirm('Отменить текущую тренировку? Она не попадёт в историю.')) { setState(s => ({ ...s, activeWorkout: null })); notify('Тренировка отменена.'); } }}>Отменить тренировку</button>
           </>}
         </section>}
@@ -649,7 +764,7 @@ export default function App() {
             <div className="menu-card-icon"><BookOpen size={22} /></div>
             <div className="menu-card-body">
               <b>Библиотека упражнений</b>
-              <small>{state.exercises.length} упражнений · {Object.keys(groupedExercises).length} категорий</small>
+              <small>{state.exercises.length} упражнений · {orderedCategories.length} категорий</small>
             </div>
             <ChevronRight size={20} />
           </button>
@@ -671,7 +786,7 @@ export default function App() {
             <label className="field-label">Примечание (опционально)
               <textarea
                 className="program-note-textarea"
-                placeholder="Например: тренировка на массу, отдых 90 сек между подходами"
+                placeholder="Например: тренировка на массу, отдых 90 сек"
                 value={programNote}
                 onChange={e => setProgramNote(e.target.value)}
                 rows={2}
@@ -705,15 +820,13 @@ export default function App() {
                   onChange={e => setProgramCustomExName(e.target.value)}
                   maxLength={80}
                 />
-                <input
-                  className="field"
-                  placeholder="Категория (например, Кардио)"
+                <CategorySelect
                   value={programCustomExCategory}
-                  onChange={e => setProgramCustomExCategory(e.target.value)}
-                  list="all-categories"
+                  onChange={(v) => { setProgramCustomExCategory(v); if (v) ensureCategoryRegistered(v); }}
+                  categories={allCategories}
                 />
                 <div className="program-custom-actions">
-                  <button className="button button-secondary" onClick={() => { setShowProgramCustomEx(false); setProgramCustomExName(''); setProgramCustomExCategory(CATEGORIES[0]); }}>
+                  <button className="button button-secondary" onClick={() => { setShowProgramCustomEx(false); setProgramCustomExName(''); setProgramCustomExCategory(DEFAULT_CATEGORIES[0]); }}>
                     Отмена
                   </button>
                   <button className="button button-primary" onClick={addCustomExerciseFromProgram}>
@@ -732,7 +845,7 @@ export default function App() {
                     checked={programExerciseIds.includes(e.id)}
                     onChange={() => toggleProgramExercise(e.id)}
                   />
-                  <span>{e.name}<small>{normalizeMuscle(e.muscle)} · {e.equipment}</small></span>
+                  <span>{e.name}<small>{normalizeMuscle(e.muscle) || 'Без категории'} · {e.equipment}</small></span>
                 </label>
               ))}
             </div>
@@ -777,33 +890,48 @@ export default function App() {
           {libraryTab === 'browse' && (
             <div className="category-list">
               {state.exercises.length === 0 && <Empty title="Библиотека пуста" text="Добавь упражнения на вкладке «Добавить своё»." />}
-              {orderedCategories.filter(cat => (groupedExercises[cat]?.length || 0) > 0).map(cat => {
+              {orderedCategories.filter(cat => (groupedExercises[cat]?.length || 0) > 0 || state.customCategories.includes(cat)).map(cat => {
                 const exercises = groupedExercises[cat] || [];
                 const expanded = expandedCategories[cat] ?? false;
+                const userCat = isUserCategory(cat);
                 return (
                   <div className="category-block" key={cat}>
-                    <button className="category-header" onClick={() => toggleCategory(cat)}>
-                      <div>
-                        <b>{cat}</b>
-                        <small>{exercises.length} упражнений</small>
-                      </div>
-                      {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                    </button>
-                    {expanded && <div className="category-exercises">
-                      {exercises.map(e => (
-                        <div className="library-row" key={e.id}>
-                          <div>
-                            <b>{e.name}</b>
-                            <small>{e.equipment}</small>
-                          </div>
-                          <button className="icon-button subtle" aria-label={`Удалить ${e.name}`} onClick={() => {
-                            if (window.confirm(`Удалить упражнение «${e.name}» из библиотеки?`)) {
-                              setState(s => ({ ...s, exercises: s.exercises.filter(x => x.id !== e.id), programs: s.programs.map(p => ({ ...p, exerciseIds: p.exerciseIds.filter(id => id !== e.id) })) }));
-                              notify('Упражнение удалено.');
-                            }
-                          }}><Trash2 size={15} /></button>
+                    <div className="category-header-wrap">
+                      <button className="category-header" onClick={() => toggleCategory(cat)}>
+                        <div>
+                          <b>{cat}</b>
+                          <small>{exercises.length} упражнений</small>
                         </div>
-                      ))}
+                        {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                      </button>
+                      {userCat && (
+                        <div className="category-tools">
+                          <button className="icon-button subtle" aria-label="Переименовать категорию" onClick={() => renameCategory(cat)}><Pencil size={14} /></button>
+                          <button className="icon-button subtle" aria-label="Удалить категорию" onClick={() => deleteCategory(cat)}><Trash2 size={14} /></button>
+                        </div>
+                      )}
+                    </div>
+                    {expanded && <div className="category-exercises">
+                      {exercises.map(e => {
+                        const defaultEx = isDefaultExercise(e.id);
+                        return (
+                          <div className="library-row" key={e.id}>
+                            <div>
+                              <b>{e.name}</b>
+                              <small>{e.equipment}{defaultEx ? ' · встроенное' : ''}</small>
+                            </div>
+                            <div className="library-row-actions">
+                              {!defaultEx && (
+                                <button className="icon-button subtle" aria-label={`Редактировать ${e.name}`} onClick={() => setEditingExercise({ ...e })}><Pencil size={14} /></button>
+                              )}
+                              {!defaultEx && (
+                                <button className="icon-button subtle" aria-label={`Удалить ${e.name}`} onClick={() => deleteExercise(e)}><Trash2 size={14} /></button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {exercises.length === 0 && <div className="picker-empty">Категория пуста</div>}
                     </div>}
                   </div>
                 );
@@ -817,12 +945,10 @@ export default function App() {
                 <input className="field" value={exerciseName} onChange={e => setExerciseName(e.target.value)} placeholder="Например, Тяга к поясу" maxLength={60} />
               </label>
               <label className="field-label">Категория
-                <input
-                  className="field"
+                <CategorySelect
                   value={exerciseMuscle}
-                  onChange={e => setExerciseMuscle(e.target.value)}
-                  list="all-categories"
-                  placeholder="Выбери или введи свою"
+                  onChange={(v) => { setExerciseMuscle(v); if (v) ensureCategoryRegistered(v); }}
+                  categories={allCategories}
                 />
               </label>
               <button className="button button-primary full-width" onClick={addCustomExercise}><Plus size={16} /> Добавить в библиотеку</button>
@@ -1067,19 +1193,15 @@ export default function App() {
           {pickerQuery.trim() && !filteredExercises.some(e => e.name.toLowerCase() === pickerQuery.toLowerCase().trim()) && (
             <div className="picker-add-custom">
               <p className="picker-add-label">Нет в библиотеке? Добавить «{pickerQuery.trim()}»</p>
-              <div className="picker-add-row">
-                <input
-                  className="picker-add-category"
-                  value={pickerNewCategory}
-                  onChange={e => setPickerNewCategory(e.target.value)}
-                  list="all-categories"
-                  placeholder="Категория"
-                />
-                <button className="picker-add-button" onClick={() => addCustomInPicker(pickerQuery)}><Plus size={16} /> Добавить</button>
-              </div>
+              <CategorySelect
+                value={pickerNewCategory}
+                onChange={(v) => { setPickerNewCategory(v); if (v) ensureCategoryRegistered(v); }}
+                categories={allCategories}
+              />
+              <button className="picker-add-button" onClick={() => addCustomInPicker(pickerQuery)}><Plus size={16} /> Добавить</button>
             </div>
           )}
-          <div className="picker-list">{filteredExercises.map(e => <button key={e.id} className="picker-row" onClick={() => addExerciseToWorkout(e)}><span><b>{e.name}</b><small>{normalizeMuscle(e.muscle)} · {e.equipment}</small></span><Plus size={18} /></button>)}{filteredExercises.length === 0 && <Empty title="Ничего не найдено" text="Введи название — можно добавить как своё упражнение." />}</div>
+          <div className="picker-list">{filteredExercises.map(e => <button key={e.id} className="picker-row" onClick={() => addExerciseToWorkout(e)}><span><b>{e.name}</b><small>{normalizeMuscle(e.muscle) || 'Без категории'} · {e.equipment}</small></span><Plus size={18} /></button>)}{filteredExercises.length === 0 && <Empty title="Ничего не найдено" text="Введи название — можно добавить как своё упражнение." />}</div>
         </section>
       </div>}
 
@@ -1110,12 +1232,105 @@ export default function App() {
         </section>
       </div>}
 
-      <datalist id="all-categories">
-        {allCategories.map(c => <option key={c} value={c} />)}
-      </datalist>
+      {editingExercise && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setEditingExercise(null); }}>
+          <section className="picker-modal" role="dialog" aria-modal="true" aria-labelledby="edit-ex-title">
+            <div className="modal-head">
+              <div>
+                <p className="eyebrow">РЕДАКТИРОВАНИЕ</p>
+                <h2 id="edit-ex-title">Упражнение</h2>
+              </div>
+              <button className="icon-button" onClick={() => setEditingExercise(null)} aria-label="Закрыть">
+                <X size={20} />
+              </button>
+            </div>
+            <label className="field-label">Название
+              <input
+                className="field"
+                value={editingExercise.name}
+                onChange={e => setEditingExercise({ ...editingExercise, name: e.target.value })}
+                maxLength={80}
+              />
+            </label>
+            <label className="field-label">Категория
+              <CategorySelect
+                value={editingExercise.muscle}
+                onChange={(v) => { setEditingExercise({ ...editingExercise, muscle: v }); if (v) ensureCategoryRegistered(v); }}
+                categories={allCategories}
+              />
+            </label>
+            <button className="button button-primary full-width" onClick={saveEditedExercise}>
+              <Save size={16} /> Сохранить
+            </button>
+          </section>
+        </div>
+      )}
+
+      {finishing && <div className="finish-flash" />}
+      {xpPop !== null && (
+        <div className="xp-pop" role="status">
+          +{xpPop} XP
+        </div>
+      )}
 
       {toast && <div className="toast" role="status">{toast}</div>}
     </div>
+  );
+}
+
+function CategorySelect({
+  value,
+  onChange,
+  categories
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  categories: string[];
+}) {
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+
+  if (creating) {
+    return (
+      <div className="category-create">
+        <input
+          className="field"
+          autoFocus
+          placeholder="Название новой категории"
+          value={newName}
+          onChange={e => setNewName(e.target.value)}
+          maxLength={40}
+        />
+        <div className="category-create-actions">
+          <button className="button button-secondary" onClick={() => { setCreating(false); setNewName(''); }}>Отмена</button>
+          <button className="button button-primary" onClick={() => {
+            const v = newName.trim();
+            if (!v) return;
+            onChange(v);
+            setCreating(false);
+            setNewName('');
+          }}>Создать</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <select
+      className="field"
+      value={value}
+      onChange={e => {
+        if (e.target.value === '__new__') {
+          setCreating(true);
+        } else {
+          onChange(e.target.value);
+        }
+      }}
+    >
+      <option value="">Без категории</option>
+      {categories.map(c => <option key={c} value={c}>{c}</option>)}
+      <option value="__new__">+ Создать категорию</option>
+    </select>
   );
 }
 
