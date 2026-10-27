@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import type { User } from 'firebase/auth';
 import type { ActiveWorkout, AppState, Exercise, Program, SetEntry, Tab, Workout, WorkoutExercise } from './types';
-import { loadState, saveState, downloadBackup } from './storage';
+import { loadState, saveState, downloadBackup, ensureState } from './storage';
 import { starterExercises } from './data';
 import {
   firebaseConfigured, subscribeToAuth, ensureAnonymousAuth,
@@ -72,7 +72,7 @@ const DEFAULT_EXERCISE_IDS = new Set(starterExercises.map(e => e.id));
 const isDefaultExercise = (id: string) => DEFAULT_EXERCISE_IDS.has(id);
 
 export default function App() {
-  const [state, setState] = useState<AppState>(() => loadState());
+  const [state, setState] = useState<AppState>(() => ensureState(loadState()));
   const [user, setUser] = useState<User | null>(null);
   const [tab, setTab] = useState<Tab>('home');
   const [toast, setToast] = useState('');
@@ -109,9 +109,9 @@ export default function App() {
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
 
   // Список всех категорий (дефолтные + созданные пользователем)
-  const allCategories = useMemo(() => {
+    const allCategories = useMemo(() => {
     const set = new Set<string>(DEFAULT_CATEGORIES);
-    state.customCategories.forEach(c => set.add(c));
+    (state.customCategories ?? []).forEach(c => set.add(c));
     state.exercises.forEach(e => {
       const cat = normalizeMuscle(e.muscle);
       if (cat) set.add(cat);
@@ -156,10 +156,11 @@ export default function App() {
   function ensureCategoryRegistered(cat: string) {
     const trimmed = cat.trim();
     if (!trimmed) return;
-    setState(s => {
-      if (s.customCategories.includes(trimmed)) return s;
+        setState(s => {
+      const list = s.customCategories ?? [];
+      if (list.includes(trimmed)) return s;
       if (DEFAULT_CATEGORIES.includes(trimmed)) return s;
-      return { ...s, customCategories: [...s.customCategories, trimmed] };
+      return { ...s, customCategories: [...list, trimmed] };
     });
   }
 
@@ -482,9 +483,9 @@ export default function App() {
       notify('Категория с таким названием уже существует.');
       return;
     }
-    setState(s => ({
+        setState(s => ({
       ...s,
-      customCategories: s.customCategories.map(c => c === normalized ? trimmed : c),
+      customCategories: (s.customCategories ?? []).map(c => c === normalized ? trimmed : c),
       exercises: s.exercises.map(e => normalizeMuscle(e.muscle) === normalized ? { ...e, muscle: trimmed } : e)
     }));
     notify('Категория переименована.');
@@ -501,9 +502,9 @@ export default function App() {
       ? `Удалить категорию «${cat}»?\n\nВ ней ${count} упражнений. Они перейдут в «Без категории».`
       : `Удалить категорию «${cat}»?`;
     if (!window.confirm(message)) return;
-    setState(s => ({
+        setState(s => ({
       ...s,
-      customCategories: s.customCategories.filter(c => c !== normalized),
+      customCategories: (s.customCategories ?? []).filter(c => c !== normalized),
       exercises: s.exercises.map(e => normalizeMuscle(e.muscle) === normalized ? { ...e, muscle: '' } : e)
     }));
     notify('Категория удалена.');
@@ -540,9 +541,6 @@ export default function App() {
         if (candidate.schemaVersion !== 1 || !Array.isArray(candidate.workouts) || !Array.isArray(candidate.exercises)) {
           throw new Error('Структура резервной копии не поддерживается.');
         }
-        if (!Array.isArray(candidate.customCategories)) {
-          candidate.customCategories = [];
-        }
 
         const currentSummary = {
           workouts: state.workouts.length,
@@ -572,8 +570,8 @@ export default function App() {
         if (!window.confirm(message)) return;
         downloadBackup(state);
         notify('Бэкап текущих данных сохранён. Применяю импорт…');
-        setTimeout(() => {
-          setState(candidate);
+         setTimeout(() => {
+          setState(ensureState(candidate));
           notify('Резервная копия импортирована.');
         }, 300);
       } catch (error) {
@@ -596,11 +594,11 @@ export default function App() {
     { id: 'profile', label: 'Профиль', icon: CircleUserRound }
   ];
 
-  const orderedCategories = useMemo(() => {
+    const orderedCategories = useMemo(() => {
     const result: string[] = [];
     const seen = new Set<string>();
     for (const c of DEFAULT_CATEGORIES) { result.push(c); seen.add(c); }
-    for (const c of state.customCategories) { if (!seen.has(c)) { result.push(c); seen.add(c); } }
+    for (const c of (state.customCategories ?? [])) { if (!seen.has(c)) { result.push(c); seen.add(c); } }
     for (const c of Object.keys(groupedExercises)) { if (!seen.has(c)) { result.push(c); seen.add(c); } }
     return result;
   }, [state.customCategories, groupedExercises]);
@@ -890,7 +888,7 @@ export default function App() {
           {libraryTab === 'browse' && (
             <div className="category-list">
               {state.exercises.length === 0 && <Empty title="Библиотека пуста" text="Добавь упражнения на вкладке «Добавить своё»." />}
-              {orderedCategories.filter(cat => (groupedExercises[cat]?.length || 0) > 0 || state.customCategories.includes(cat)).map(cat => {
+              {orderedCategories.filter(cat => (groupedExercises[cat]?.length || 0) > 0 || (state.customCategories ?? []).includes(cat)).map(cat => {
                 const exercises = groupedExercises[cat] || [];
                 const expanded = expandedCategories[cat] ?? false;
                 const userCat = isUserCategory(cat);
