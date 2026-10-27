@@ -1,5 +1,5 @@
 export type Tab = 'home' | 'workout' | 'programs' | 'history' | 'quest' | 'profile';
-export type SetEntry = { id: string; weight: string; reps: string; done: boolean };
+export type SetEntry = { id: string; weight: string; reps: string; done: boolean; note?: string };
 export type WorkoutExercise = { id: string; exerciseId: string; name: string; sets: SetEntry[]; collapsed: boolean };
 export type Workout = {
   id: string; name: string; startedAt: number; endedAt: number;
