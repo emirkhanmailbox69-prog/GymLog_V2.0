@@ -9,7 +9,7 @@ import type { ActiveWorkout, AppState, Exercise, Program, SetEntry, Tab, Workout
 import { loadState, saveState, downloadBackup } from './storage';
 import {
   firebaseConfigured, subscribeToAuth, ensureAnonymousAuth,
-  linkAnonymousWithGoogle, logOut
+  linkAnonymousWithGoogle, signInWithGoogleExisting, logOut
 } from './firebase';
 import { useCloudSync } from './hooks/useCloudSync';
 
@@ -93,7 +93,7 @@ export default function App() {
     window.setTimeout(() => setToast(''), 2600);
   }
 
-    async function handleLinkGoogle() {
+      async function handleLinkGoogle() {
     try {
       const linkedUser = await linkAnonymousWithGoogle();
       setUser(linkedUser);
@@ -101,12 +101,31 @@ export default function App() {
     } catch (error: unknown) {
       const code = (error as { code?: string })?.code || '';
       const message = (error as { message?: string })?.message || '';
+
+      if (code === 'auth/credential-already-in-use') {
+        const confirmed = window.confirm(
+          'Этот Google-аккаунт уже используется в GymLog (возможно, вы входили на этом телефоне в Safari или на другом устройстве).\n\n' +
+          'Войти в существующий аккаунт? Данные, которые сейчас сохранены только на этом устройстве, будут заменены данными из облака.\n\n' +
+          'Совет: если хотите сохранить текущие данные, сначала нажмите "Экспортировать JSON" в профиле.'
+        );
+        if (!confirmed) return;
+        try {
+          downloadBackup(state);
+          const existingUser = await signInWithGoogleExisting();
+          setUser(existingUser);
+          notify(`Вошли в существующий аккаунт: ${existingUser.email || 'Google'}`);
+        } catch (signInError: unknown) {
+          const signInCode = (signInError as { code?: string })?.code || '';
+          notify(`Не удалось войти: ${signInCode || 'ошибка'}`);
+          console.error('SignIn existing error:', signInError);
+        }
+        return;
+      }
+
       if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
         notify('Браузер заблокировал окно Google. Открой приложение в Safari (не через ярлык) и попробуй снова.');
       } else if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
         notify('Окно Google закрыто. Попробуй снова.');
-      } else if (code === 'auth/credential-already-in-use') {
-        notify('Этот Google-аккаунт уже используется в другом профиле.');
       } else if (code === 'auth/network-request-failed') {
         notify('Нет связи с Google. Проверь интернет.');
       } else {
