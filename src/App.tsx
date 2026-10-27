@@ -277,27 +277,65 @@ export default function App() {
   }
 
   function importData(file?: File) {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const parsed: unknown = JSON.parse(String(reader.result));
-        if (!parsed || typeof parsed !== 'object' || !('app' in parsed) || parsed.app !== 'GymLog' || !('state' in parsed)) {
-          throw new Error('Файл не похож на резервную копию GymLog.');
-        }
-        const candidate = (parsed as { state: AppState }).state;
-        if (candidate.schemaVersion !== 1 || !Array.isArray(candidate.workouts) || !Array.isArray(candidate.exercises)) {
-          throw new Error('Структура резервной копии не поддерживается.');
-        }
-        if (!window.confirm('Импорт заменит текущие данные. Продолжить?')) return;
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed: unknown = JSON.parse(String(reader.result));
+      if (!parsed || typeof parsed !== 'object' || !('app' in parsed) || parsed.app !== 'GymLog' || !('state' in parsed)) {
+        throw new Error('Файл не похож на резервную копию GymLog.');
+      }
+      const raw = parsed as {
+        exportedAt?: string;
+        summary?: { workoutsCount?: number; totalVolume?: number; xp?: number };
+        state: AppState;
+      };
+      const candidate = raw.state;
+      if (candidate.schemaVersion !== 1 || !Array.isArray(candidate.workouts) || !Array.isArray(candidate.exercises)) {
+        throw new Error('Структура резервной копии не поддерживается.');
+      }
+
+      const currentSummary = {
+        workouts: state.workouts.length,
+        xp: state.workouts.reduce((n, w) => n + w.earnedXp, 0)
+      };
+      const fileDate = raw.exportedAt
+        ? new Date(raw.exportedAt).toLocaleString('ru-RU', {
+            day: 'numeric', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+          })
+        : 'дата не указана';
+      const fileSummary = raw.summary
+        ? `тренировок: ${raw.summary.workoutsCount ?? '?'}, XP: ${raw.summary.xp ?? '?'}`
+        : `тренировок: ${candidate.workouts.length}`;
+
+      const message =
+        `Файл создан: ${fileDate}\n` +
+        `Содержимое файла: ${fileSummary}\n` +
+        `\n` +
+        `Текущее состояние: тренировок: ${currentSummary.workouts}, XP: ${currentSummary.xp}\n` +
+        `\n` +
+        `Импорт ЗАМЕНИТ текущие данные содержимым файла.\n` +
+        `Перед заменой будет автоматически скачан бэкап текущего состояния.\n` +
+        `\n` +
+        `Продолжить?`;
+
+      if (!window.confirm(message)) return;
+
+      // Автобэкап текущего состояния ПЕРЕД заменой
+      downloadBackup(state);
+      notify('Бэкап текущих данных сохранён. Применяю импорт…');
+
+      setTimeout(() => {
         setState(candidate);
         notify('Резервная копия импортирована.');
-      } catch (error) {
-        notify(error instanceof Error ? error.message : 'Не удалось импортировать файл.');
-      }
-    };
-    reader.readAsText(file);
-  }
+      }, 300);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Не удалось импортировать файл.');
+    }
+  };
+  reader.readAsText(file);
+}
 
   function updateProfile(name: string, bodyWeight: string) {
     setState(s => ({ ...s, profile: { name, bodyWeight } }));
