@@ -24,7 +24,7 @@ export type RingSetting = { metric: RingMetric; goal: number };
 
 export type AppState = {
   schemaVersion: 1;
-  profile: { name: string; bodyWeight: string };
+  profile: { name: string; bodyWeight: string; avatar?: string };
   workouts: Workout[];
   activeWorkout: ActiveWorkout | null;
   exercises: Exercise[];
