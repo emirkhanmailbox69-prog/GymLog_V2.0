@@ -19,6 +19,7 @@ export function useCloudSync(
 ): CloudSyncStatus {
   const isRemoteUpdate = useRef(false);
   const initialSyncDone = useRef(false);
+  const prevUidRef = useRef<string | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -42,7 +43,14 @@ export function useCloudSync(
   useEffect(() => {
     if (!user) {
       initialSyncDone.current = false;
+      prevUidRef.current = null;
       return;
+    }
+    // UID сменился (аноним → Google или наоборот) — сбрасываем флаг,
+    // чтобы подписка на Firestore прочитала данные нового uid, а не пушила пустое состояние.
+    if (prevUidRef.current !== user.uid) {
+      initialSyncDone.current = false;
+      prevUidRef.current = user.uid;
     }
     const unsubscribe = subscribeToState(user.uid, (remoteState) => {
       if (!initialSyncDone.current) {
