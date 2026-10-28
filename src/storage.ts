@@ -13,7 +13,11 @@ export function initialState(): AppState {
     exercises: starterExercises,
     programs: [],
     customCategories: [],
-    settings: { restSeconds: 90 }
+    settings: {
+      restSeconds: 90,
+      ring1: { metric: 'workouts_week', goal: 4 },
+      ring2: { metric: 'sets_week', goal: 50 }
+    }
   };
 }
 
@@ -24,11 +28,22 @@ export function initialState(): AppState {
 export function ensureState(state: Partial<AppState> | null | undefined): AppState {
   const defaults = initialState();
   if (!state || typeof state !== 'object') return defaults;
+  const s = state.settings || {};
   return {
     ...defaults,
     ...state,
     profile: { ...defaults.profile, ...(state.profile || {}) },
-    settings: { ...defaults.settings, ...(state.settings || {}) },
+    settings: {
+      restSeconds: s.restSeconds ?? defaults.settings.restSeconds,
+      ring1: {
+        metric: s.ring1?.metric ?? defaults.settings.ring1.metric,
+        goal: s.ring1?.goal ?? defaults.settings.ring1.goal
+      },
+      ring2: {
+        metric: s.ring2?.metric ?? defaults.settings.ring2.metric,
+        goal: s.ring2?.goal ?? defaults.settings.ring2.goal
+      }
+    },
     customCategories: Array.isArray(state.customCategories) ? state.customCategories : [],
     exercises: Array.isArray(state.exercises) && state.exercises.length > 0 ? state.exercises : defaults.exercises,
     workouts: Array.isArray(state.workouts) ? state.workouts : [],
