@@ -21,10 +21,6 @@ export function initialState(): AppState {
   };
 }
 
-/**
- * Нормализует любой частичный/старый стейт до валидного AppState.
- * Используется при загрузке из localStorage, из Firestore и из import JSON.
- */
 export function ensureState(state: Partial<AppState> | null | undefined): AppState {
   const defaults = initialState();
   if (!state || typeof state !== 'object') return defaults;
@@ -89,7 +85,9 @@ export function saveState(state: AppState): boolean {
 export function downloadBackup(state: AppState): void {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
-  const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+  const datePart = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const timePart = `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+  const stamp = `${datePart}_${timePart}`;
 
   const totalVolume = state.workouts.reduce((n, w) =>
     n + w.exercises.reduce((m, e) =>
@@ -117,6 +115,8 @@ export function downloadBackup(state: AppState): void {
   const link = document.createElement('a');
   link.href = url;
   link.download = `gymlog-backup-${stamp}.json`;
+  document.body.appendChild(link);
   link.click();
-  URL.revokeObjectURL(url);
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
