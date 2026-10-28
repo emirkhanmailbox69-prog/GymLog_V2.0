@@ -535,9 +535,18 @@ export default function App() {
     setOpenNotes(prev => ({ ...prev, [key]: !prev[key] }));
   }
 
-  function getExerciseProgress(exerciseId: string): { date: number; value: number }[] {
+    function getExerciseStats(exerciseId: string): {
+    points: { date: number; value: number }[];
+    bestWeight: number;
+    bestReps: number;
+    best1RM: number;
+  } {
     const sorted = [...state.workouts].reverse();
     const points: { date: number; value: number }[] = [];
+    let bestWeight = 0;
+    let bestReps = 0;
+    let best1RM = 0;
+
     for (const w of sorted) {
       const ex = w.exercises.find(e => e.exerciseId === exerciseId);
       if (!ex) continue;
@@ -547,10 +556,28 @@ export default function App() {
         (n, s) => n + (Number(s.weight) || 0) * (Number(s.reps) || 0),
         0
       );
-      if (vol === 0) continue;
-      points.push({ date: w.endedAt, value: vol });
+      if (vol > 0) {
+        points.push({ date: w.endedAt, value: vol });
+      }
+      for (const s of doneSets) {
+        const wt = Number(s.weight) || 0;
+        const rp = Number(s.reps) || 0;
+        if (wt <= 0 || rp <= 0) continue;
+        if (wt > bestWeight) {
+          bestWeight = wt;
+          bestReps = rp;
+        }
+        const epley = wt * (1 + rp / 30);
+        if (epley > best1RM) best1RM = epley;
+      }
     }
-    return points.slice(-12);
+
+    return {
+      points: points.slice(-12),
+      bestWeight,
+      bestReps,
+      best1RM: Math.round(best1RM * 10) / 10
+    };
   }
 
   function finishWorkout() {
@@ -1833,23 +1860,40 @@ export default function App() {
         </div>
       )}
 
-      {graphExercise && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setGraphExercise(null); }}>
-          <section className="picker-modal" role="dialog" aria-modal="true" aria-labelledby="graph-title">
-            <div className="modal-head">
-              <div>
-                <p className="eyebrow">ПРОГРЕСС</p>
-                <h2 id="graph-title">{graphExercise.name}</h2>
+            {graphExercise && (() => {
+        const stats = getExerciseStats(graphExercise.id);
+        return (
+          <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setGraphExercise(null); }}>
+            <section className="picker-modal" role="dialog" aria-modal="true" aria-labelledby="graph-title">
+              <div className="modal-head">
+                <div>
+                  <p className="eyebrow">ПРОГРЕСС</p>
+                  <h2 id="graph-title">{graphExercise.name}</h2>
+                </div>
+                <button className="icon-button" onClick={() => setGraphExercise(null)} aria-label="Закрыть">
+                  <X size={20} />
+                </button>
               </div>
-              <button className="icon-button" onClick={() => setGraphExercise(null)} aria-label="Закрыть">
-                <X size={20} />
-              </button>
-            </div>
-            <ProgressChart points={getExerciseProgress(graphExercise.id)} />
-            <p className="chart-caption">Объём = вес × повторы за все выполненные подходы. Последние 12 тренировок.</p>
-          </section>
-        </div>
-      )}
+
+              {stats.bestWeight > 0 && (
+                <div className="chart-stats">
+                  <div className="chart-stat">
+                    <span className="chart-stat-label">Лучший подход</span>
+                    <span className="chart-stat-value">{stats.bestWeight} кг × {stats.bestReps}</span>
+                  </div>
+                  <div className="chart-stat">
+                    <span className="chart-stat-label">Расчётный 1ПМ</span>
+                    <span className="chart-stat-value">≈ {stats.best1RM} кг</span>
+                  </div>
+                </div>
+              )}
+
+              <ProgressChart points={stats.points} />
+              <p className="chart-caption">Объём = вес × повторы за все выполненные подходы. 1ПМ — оценка по формуле Эпли (вес × (1 + повторы / 30)), не фактический подъём.</p>
+            </section>
+          </div>
+        );
+      })()}
 
       {emailAuthOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget && !emailAuthLoading) setEmailAuthOpen(false); }}>
@@ -2067,7 +2111,13 @@ function ProgressChart({ points }: { points: { date: number; value: number }[] }
         <line x1={pad.left} y1={pad.top} x2={pad.left} y2={pad.top + innerH} stroke="rgba(255,255,255,.08)" />
         <line x1={pad.left} y1={pad.top + innerH} x2={pad.left + innerW} y2={pad.top + innerH} stroke="rgba(255,255,255,.08)" />
         <line x1={pad.left} y1={pad.top + innerH / 2} x2={pad.left + innerW} y2={pad.top + innerH / 2} stroke="rgba(255,255,255,.05)" strokeDasharray="2 4" />
-        <path d={areaD} fill="rgba(208,244,119,.09)" />
+                <defs>
+          <linearGradient id="chartAreaGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="rgb(208,244,119)" stopOpacity="0.35" />
+            <stop offset="100%" stopColor="rgb(208,244,119)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={areaD} fill="url(#chartAreaGradient)" />
         <path d={pathD} fill="none" stroke="var(--lime)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
         {coords.map((c, i) => <circle key={i} cx={c.x} cy={c.y} r={3} fill="var(--lime)" />)}
         <text x={coords[0].x} y={H - 8} textAnchor="start" className="chart-label">{fmtShort(coords[0].date)}</text>
