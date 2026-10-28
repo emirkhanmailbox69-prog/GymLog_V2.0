@@ -1277,17 +1277,36 @@ h3{font:600 16px/1.3 -apple-system,sans-serif;margin-bottom:6px}
   touch-action: manipulation;
   align-self: flex-start;
 }
-/* ===== Статистика в модалке графика ===== */
+/* ===== Модалка графика (большая) ===== */
+.graph-modal {
+  max-height: 92dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.graph-modal .modal-head {
+  margin-bottom: 0;
+  flex-shrink: 0;
+}
+.graph-chart-wrap {
+  margin: 4px 0;
+}
+.graph-chart-wrap .progress-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+}
 .chart-stats {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-  margin-bottom: 12px;
+  flex-shrink: 0;
 }
 .chart-stat {
-  padding: 10px 12px;
+  padding: 12px;
   background: var(--card-2);
-  border-radius: 10px;
+  border-radius: 12px;
+  min-width: 0;
 }
 .chart-stat-label {
   display: block;
@@ -1300,7 +1319,7 @@ h3{font:600 16px/1.3 -apple-system,sans-serif;margin-bottom:6px}
 }
 .chart-stat-value {
   display: block;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--lime);
   letter-spacing: -0.3px;
@@ -1308,9 +1327,31 @@ h3{font:600 16px/1.3 -apple-system,sans-serif;margin-bottom:6px}
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.chart-stat-date {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chart-label {
+  font-size: 10px;
+  fill: var(--muted);
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+.chart-caption {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+  margin: 0;
+  text-align: center;
+}
 
 @media (max-width: 380px) {
-  .chart-stat-value {
-    font-size: 14px;
-  }
+  .chart-stat-value { font-size: 14px; }
+  .chart-stat { padding: 10px; }
+  .chart-stat-label { font-size: 9px; }
+  .chart-stat-date { font-size: 9px; }
 }
