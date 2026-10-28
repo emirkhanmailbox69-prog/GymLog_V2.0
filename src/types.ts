@@ -14,6 +14,14 @@ export type Program = {
   exerciseIds: string[];
   createdAt: number;
 };
+
+export type RingMetric =
+  | 'workouts_week' | 'sets_week' | 'volume_week' | 'minutes_week' | 'xp_week'
+  | 'workouts_30d' | 'sets_30d' | 'volume_30d'
+  | 'streak';
+
+export type RingSetting = { metric: RingMetric; goal: number };
+
 export type AppState = {
   schemaVersion: 1;
   profile: { name: string; bodyWeight: string };
@@ -22,5 +30,9 @@ export type AppState = {
   exercises: Exercise[];
   programs: Program[];
   customCategories: string[];
-  settings: { restSeconds: number };
+  settings: {
+    restSeconds: number;
+    ring1: RingSetting;
+    ring2: RingSetting;
+  };
 };
