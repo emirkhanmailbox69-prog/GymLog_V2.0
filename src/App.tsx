@@ -5,7 +5,7 @@ import {
   Pencil, Plus, RefreshCw, Save, ShieldCheck, Star, Target, Trash2, TrendingUp, Trophy, X, Zap
 } from 'lucide-react';
 import type { User } from 'firebase/auth';
-import type { ActiveWorkout, AppState, Exercise, Program, SetEntry, Tab, Workout, WorkoutExercise } from './types';
+import type { ActiveWorkout, AppState, Exercise, Program, RingMetric, SetEntry, Tab, Workout, WorkoutExercise } from './types';
 import { loadState, saveState, downloadBackup, ensureState } from './storage';
 import { starterExercises } from './data';
 import {
@@ -84,7 +84,19 @@ const MUSCLE_MAP: Record<string, string> = {
   'Корпус': 'Пресс и кор'
 };
 const normalizeMuscle = (m: string) => MUSCLE_MAP[m] || m;
+const RING_METRICS: { id: RingMetric; label: string; shortLabel: string; unit: string; defaultGoal: number }[] = [
+  { id: 'workouts_week', label: 'Тренировки за неделю', shortLabel: 'Тренировки', unit: 'трен.', defaultGoal: 4 },
+  { id: 'sets_week', label: 'Подходы за неделю', shortLabel: 'Подходы', unit: 'подх.', defaultGoal: 50 },
+  { id: 'volume_week', label: 'Объём за неделю', shortLabel: 'Объём', unit: 'кг', defaultGoal: 10000 },
+  { id: 'minutes_week', label: 'Время за неделю', shortLabel: 'Время', unit: 'мин', defaultGoal: 180 },
+  { id: 'xp_week', label: 'XP за неделю', shortLabel: 'XP', unit: 'XP', defaultGoal: 300 },
+  { id: 'workouts_30d', label: 'Тренировки за 30 дней', shortLabel: 'Тренировки', unit: 'трен.', defaultGoal: 12 },
+  { id: 'sets_30d', label: 'Подходы за 30 дней', shortLabel: 'Подходы', unit: 'подх.', defaultGoal: 150 },
+  { id: 'volume_30d', label: 'Объём за 30 дней', shortLabel: 'Объём', unit: 'кг', defaultGoal: 40000 },
+  { id: 'streak', label: 'Серия дней подряд', shortLabel: 'Серия', unit: 'дн.', defaultGoal: 7 }
+];
 
+const getRingMetricInfo = (id: RingMetric) => RING_METRICS.find(m => m.id === id) || RING_METRICS[0];
 const DEFAULT_EXERCISE_IDS = new Set(starterExercises.map(e => e.id));
 const isDefaultExercise = (id: string) => DEFAULT_EXERCISE_IDS.has(id);
 
@@ -307,6 +319,54 @@ export default function App() {
     while (days.has(d.toDateString())) { s++; d.setDate(d.getDate() - 1); }
     return s;
   })();
+
+    const weeklyVolume = weeklyWorkouts.reduce((n, w) => n + volume(w), 0);
+  const weeklyMinutes = weeklyWorkouts.reduce((n, w) => n + durationMinutes(w.startedAt, w.endedAt), 0);
+  const weeklyXp = weeklyWorkouts.reduce((n, w) => n + w.earnedXp, 0);
+
+  const last30dWorkouts = state.workouts.filter(w => Date.now() - w.endedAt < 30 * 86400000);
+  const last30dSets = last30dWorkouts.reduce((n, w) => n + setCount(w), 0);
+  const last30dVolume = last30dWorkouts.reduce((n, w) => n + volume(w), 0);
+
+  function getRingMetricValue(metric: RingMetric): number {
+    switch (metric) {
+      case 'workouts_week': return weeklyWorkouts.length;
+      case 'sets_week': return weeklySets;
+      case 'volume_week': return weeklyVolume;
+      case 'minutes_week': return weeklyMinutes;
+      case 'xp_week': return weeklyXp;
+      case 'workouts_30d': return last30dWorkouts.length;
+      case 'sets_30d': return last30dSets;
+      case 'volume_30d': return last30dVolume;
+      case 'streak': return streak;
+    }
+  }
+
+  function updateRingMetric(which: 'ring1' | 'ring2', metric: RingMetric) {
+    const info = getRingMetricInfo(metric);
+    setState(s => ({
+      ...s,
+      settings: {
+        ...s.settings,
+        [which]: { metric, goal: info.defaultGoal }
+      }
+    }));
+  }
+
+  function updateRingGoal(which: 'ring1' | 'ring2', goal: number) {
+    setState(s => ({
+      ...s,
+      settings: {
+        ...s.settings,
+        [which]: { ...s.settings[which], goal: Math.max(1, goal || 1) }
+      }
+    }));
+  }
+
+  const ring1Info = getRingMetricInfo(state.settings.ring1.metric);
+  const ring2Info = getRingMetricInfo(state.settings.ring2.metric);
+  const ring1Value = getRingMetricValue(state.settings.ring1.metric);
+  const ring2Value = getRingMetricValue(state.settings.ring2.metric);
 
   const filteredExercises = useMemo(() => state.exercises.filter(e =>
     `${e.name} ${e.muscle} ${e.equipment}`.toLocaleLowerCase('ru-RU').includes(pickerQuery.toLocaleLowerCase('ru-RU'))
@@ -775,20 +835,20 @@ export default function App() {
           <h1>Сводка.</h1>
           <p className="intro">Прогресс за последние 7 дней.</p>
 
-          <div className="rings-card">
+                    <div className="rings-card">
             <ActivityRings rings={[
-              { percent: weeklyWorkouts.length / 4, color: '#ff6482' },
-              { percent: weeklySets / 50, color: '#d0f477' },
+              { percent: ring1Value / Math.max(1, state.settings.ring1.goal), color: '#ff6482' },
+              { percent: ring2Value / Math.max(1, state.settings.ring2.goal), color: '#d0f477' },
               { percent: (xp % 250) / 250, color: '#32d4ff' }
             ]} />
             <div className="rings-legend">
               <div className="ring-legend-row">
                 <span className="ring-dot" style={{ background: '#ff6482' }} />
-                <div><b>Тренировки</b><small>{weeklyWorkouts.length} из 4 за неделю</small></div>
+                <div><b>{ring1Info.shortLabel}</b><small>{ring1Value} из {state.settings.ring1.goal} {ring1Info.unit}</small></div>
               </div>
               <div className="ring-legend-row">
                 <span className="ring-dot" style={{ background: '#d0f477' }} />
-                <div><b>Подходы</b><small>{weeklySets} из 50 за неделю</small></div>
+                <div><b>{ring2Info.shortLabel}</b><small>{ring2Value} из {state.settings.ring2.goal} {ring2Info.unit}</small></div>
               </div>
               <div className="ring-legend-row">
                 <span className="ring-dot" style={{ background: '#32d4ff' }} />
@@ -1407,6 +1467,58 @@ export default function App() {
                 />
               </label>
             </div>
+          </div>
+                    <div className="settings-section">
+            <p className="settings-header">Цели на главной</p>
+            <div className="settings-group">
+              <div className="ring-setting">
+                <div className="ring-setting-color" style={{ background: '#ff6482' }} />
+                <div className="ring-setting-body">
+                  <select
+                    className="ring-setting-select"
+                    value={state.settings.ring1.metric}
+                    onChange={e => updateRingMetric('ring1', e.target.value as RingMetric)}
+                  >
+                    {RING_METRICS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                  </select>
+                  <div className="ring-setting-goal">
+                    <span>Цель:</span>
+                    <input
+                      type="number"
+                      className="ring-setting-input"
+                      value={state.settings.ring1.goal}
+                      onChange={e => updateRingGoal('ring1', Number(e.target.value))}
+                      min={1}
+                    />
+                    <span className="ring-setting-unit">{ring1Info.unit}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="ring-setting">
+                <div className="ring-setting-color" style={{ background: '#d0f477' }} />
+                <div className="ring-setting-body">
+                  <select
+                    className="ring-setting-select"
+                    value={state.settings.ring2.metric}
+                    onChange={e => updateRingMetric('ring2', e.target.value as RingMetric)}
+                  >
+                    {RING_METRICS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                  </select>
+                  <div className="ring-setting-goal">
+                    <span>Цель:</span>
+                    <input
+                      type="number"
+                      className="ring-setting-input"
+                      value={state.settings.ring2.goal}
+                      onChange={e => updateRingGoal('ring2', Number(e.target.value))}
+                      min={1}
+                    />
+                    <span className="ring-setting-unit">{ring2Info.unit}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p className="sync-hint" style={{ marginTop: 8 }}>Третье кольцо — уровень, оно не настраивается.</p>
           </div>
 
           <div className="settings-section">
