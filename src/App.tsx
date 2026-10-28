@@ -195,18 +195,17 @@ export default function App() {
       const code = (error as { code?: string })?.code || '';
       const message = (error as { message?: string })?.message || '';
 
-      if (code === 'auth/credential-already-in-use') {
+            if (code === 'auth/credential-already-in-use') {
         const confirmed = window.confirm(
-          'Этот Google-аккаунт уже используется в GymLog (возможно, вы входили на этом телефоне в Safari или на другом устройстве).\n\n' +
-          'Войти в существующий аккаунт? Данные, которые сейчас сохранены только на этом устройстве, будут заменены данными из облака.\n\n' +
-          'Совет: если хотите сохранить текущие данные, сначала нажмите "Экспортировать JSON" в профиле.'
+          'Этот Google-аккаунт уже привязан к GymLog.\n\n' +
+          'Войти в него и загрузить данные из облака?\n' +
+          'Текущие данные на этом устройстве будут заменены облачными.'
         );
         if (!confirmed) return;
         try {
-          downloadBackup(state);
           const existingUser = await signInWithGoogleExisting();
           setUser(existingUser);
-          notify(`Вошли в существующий аккаунт: ${existingUser.email || 'Google'}`);
+          notify(`Вошли: ${existingUser.email || 'Google'}`);
         } catch (signInError: unknown) {
           const signInCode = (signInError as { code?: string })?.code || '';
           notify(`Не удалось войти: ${signInCode || 'ошибка'}`);
@@ -651,38 +650,24 @@ export default function App() {
           throw new Error('Структура резервной копии не поддерживается.');
         }
 
-        const currentSummary = {
-          workouts: state.workouts.length,
-          xp: state.workouts.reduce((n, w) => n + w.earnedXp, 0)
-        };
-        const fileDate = raw.exportedAt
+          const fileDate = raw.exportedAt
           ? new Date(raw.exportedAt).toLocaleString('ru-RU', {
               day: 'numeric', month: 'short', year: 'numeric',
               hour: '2-digit', minute: '2-digit'
             })
           : 'дата не указана';
         const fileSummary = raw.summary
-          ? `тренировок: ${raw.summary.workoutsCount ?? '?'}, XP: ${raw.summary.xp ?? '?'}`
-          : `тренировок: ${candidate.workouts.length}`;
+          ? `тренировок ${raw.summary.workoutsCount ?? '?'}, XP ${raw.summary.xp ?? '?'}`
+          : `тренировок ${candidate.workouts.length}`;
 
         const message =
-          `Файл создан: ${fileDate}\n` +
-          `Содержимое файла: ${fileSummary}\n` +
-          `\n` +
-          `Текущее состояние: тренировок: ${currentSummary.workouts}, XP: ${currentSummary.xp}\n` +
-          `\n` +
-          `Импорт ЗАМЕНИТ текущие данные содержимым файла.\n` +
-          `Перед заменой будет автоматически скачан бэкап текущего состояния.\n` +
-          `\n` +
-          `Продолжить?`;
+          `Импортировать файл от ${fileDate}?\n` +
+          `Содержимое: ${fileSummary}.\n\n` +
+          `Текущие данные заменятся.`;
 
         if (!window.confirm(message)) return;
-        downloadBackup(state);
-        notify('Бэкап текущих данных сохранён. Применяю импорт…');
-        setTimeout(() => {
-          setState(ensureState(candidate));
-          notify('Резервная копия импортирована.');
-        }, 300);
+        setState(ensureState(candidate));
+        notify('Импорт завершён.');
       } catch (error) {
         notify(error instanceof Error ? error.message : 'Не удалось импортировать файл.');
       }
