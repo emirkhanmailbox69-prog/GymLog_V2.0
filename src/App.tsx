@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Activity, Award, BarChart3, BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight,
+  Activity, Award, BarChart3, BookOpen, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight,
   ChevronUp, CircleUserRound, Cloud, Clock3, Copy, Dumbbell, FileDown, History, Home, MessageSquare,
   Pencil, Plus, RefreshCw, Save, ShieldCheck, Star, Target, Trash2, TrendingUp, Trophy, X, Zap
 } from 'lucide-react';
@@ -58,6 +58,23 @@ const formatSyncTime = (ts: number | null): string => {
   return d.toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 };
 
+const MONTH_NAMES = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+const formatMonthYear = (d: Date) => `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+const dayKeyFromDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const dayKeyFromTs = (ts: number) => dayKeyFromDate(new Date(ts));
+const buildCalendarGrid = (year: number, month: number): (Date | null)[] => {
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const totalDays = lastDay.getDate();
+  const startWeekday = (firstDay.getDay() + 6) % 7;
+  const cells: (Date | null)[] = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= totalDays; d++) cells.push(new Date(year, month, d));
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+};
+
 const DEFAULT_CATEGORIES = ['Ноги и ягодицы', 'Спина', 'Грудь', 'Плечи (Дельты)', 'Руки (Бицепс и Трицепс)', 'Пресс и кор'];
 const MUSCLE_MAP: Record<string, string> = {
   'Ноги': 'Ноги и ягодицы',
@@ -86,7 +103,12 @@ export default function App() {
   const [historyPickerOpen, setHistoryPickerOpen] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [xpPop, setXpPop] = useState<number | null>(null);
-    const [graphExercise, setGraphExercise] = useState<{ id: string; name: string } | null>(null);
+  const [graphExercise, setGraphExercise] = useState<{ id: string; name: string } | null>(null);
+
+  // История
+  const [historyView, setHistoryView] = useState<'list' | 'calendar'>('list');
+  const [calendarDate, setCalendarDate] = useState<Date>(() => new Date());
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
   // Программы
   const [programsView, setProgramsView] = useState<'list' | 'library'>('list');
@@ -109,8 +131,7 @@ export default function App() {
   // Редактирование упражнения
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
 
-  // Список всех категорий (дефолтные + созданные пользователем)
-    const allCategories = useMemo(() => {
+  const allCategories = useMemo(() => {
     const set = new Set<string>(DEFAULT_CATEGORIES);
     (state.customCategories ?? []).forEach(c => set.add(c));
     state.exercises.forEach(e => {
@@ -157,7 +178,7 @@ export default function App() {
   function ensureCategoryRegistered(cat: string) {
     const trimmed = cat.trim();
     if (!trimmed) return;
-        setState(s => {
+    setState(s => {
       const list = s.customCategories ?? [];
       if (list.includes(trimmed)) return s;
       if (DEFAULT_CATEGORIES.includes(trimmed)) return s;
@@ -255,6 +276,75 @@ export default function App() {
     return groups;
   }, [state.exercises]);
 
+  // === Календарь: вычисления ===
+  const workoutsByDay = useMemo(() => {
+    const map: Record<string, Workout[]> = {};
+    for (const w of state.workouts) {
+      const key = dayKeyFromTs(w.endedAt);
+      if (!map[key]) map[key] = [];
+      map[key].push(w);
+    }
+    return map;
+  }, [state.workouts]);
+
+  const calendarCells = useMemo(
+    () => buildCalendarGrid(calendarDate.getFullYear(), calendarDate.getMonth()),
+    [calendarDate]
+  );
+
+  const todayKey = dayKeyFromDate(new Date());
+
+  const monthWorkouts = useMemo(() => {
+    return state.workouts.filter(w => {
+      const d = new Date(w.endedAt);
+      return d.getFullYear() === calendarDate.getFullYear() && d.getMonth() === calendarDate.getMonth();
+    });
+  }, [state.workouts, calendarDate]);
+
+  const monthVolume = monthWorkouts.reduce((n, w) => n + volume(w), 0);
+  const monthXp = monthWorkouts.reduce((n, w) => n + w.earnedXp, 0);
+
+  const muscleStats30d = useMemo(() => {
+    const cutoff = Date.now() - 30 * 86400000;
+    const stats: Record<string, number> = {};
+    for (const w of state.workouts) {
+      if (w.endedAt < cutoff) continue;
+      for (const ex of w.exercises) {
+        const libEx = state.exercises.find(e => e.id === ex.exerciseId);
+        const cat = libEx ? (normalizeMuscle(libEx.muscle) || 'Без категории') : 'Без категории';
+        const doneSets = ex.sets.filter(s => s.done).length;
+        if (doneSets === 0) continue;
+        stats[cat] = (stats[cat] || 0) + doneSets;
+      }
+    }
+    return stats;
+  }, [state.workouts, state.exercises]);
+
+  const muscleStatsSorted = useMemo(() => {
+    return Object.entries(muscleStats30d)
+      .filter(([, v]) => v > 0)
+      .sort((a, b) => b[1] - a[1]);
+  }, [muscleStats30d]);
+
+  const maxMuscleValue = Math.max(1, ...muscleStatsSorted.map(([, v]) => v));
+
+  function goToPrevMonth() {
+    setCalendarDate(d => new Date(d.getFullYear(), d.getMonth() - 1, 1));
+  }
+  function goToNextMonth() {
+    setCalendarDate(d => new Date(d.getFullYear(), d.getMonth() + 1, 1));
+  }
+  function selectDay(key: string) {
+    setSelectedDay(prev => prev === key ? null : key);
+  }
+  function openCalendar() {
+    setHistoryView('calendar');
+    if (!selectedDay) {
+      setCalendarDate(new Date());
+      setSelectedDay(todayKey);
+    }
+  }
+
   function patchActive(updater: (active: ActiveWorkout) => ActiveWorkout) {
     setState(s => s.activeWorkout ? { ...s, activeWorkout: updater(s.activeWorkout) } : s);
   }
@@ -312,7 +402,7 @@ export default function App() {
     setOpenNotes(prev => ({ ...prev, [key]: !prev[key] }));
   }
 
-    function getExerciseProgress(exerciseId: string): { date: number; value: number }[] {
+  function getExerciseProgress(exerciseId: string): { date: number; value: number }[] {
     const sorted = [...state.workouts].reverse();
     const points: { date: number; value: number }[] = [];
     for (const w of sorted) {
@@ -329,7 +419,7 @@ export default function App() {
     }
     return points.slice(-12);
   }
-  
+
   function finishWorkout() {
     if (!currentWorkout || finishing) return;
     const earnedXp = xpFor(currentWorkout);
@@ -502,7 +592,7 @@ export default function App() {
       notify('Категория с таким названием уже существует.');
       return;
     }
-        setState(s => ({
+    setState(s => ({
       ...s,
       customCategories: (s.customCategories ?? []).map(c => c === normalized ? trimmed : c),
       exercises: s.exercises.map(e => normalizeMuscle(e.muscle) === normalized ? { ...e, muscle: trimmed } : e)
@@ -521,7 +611,7 @@ export default function App() {
       ? `Удалить категорию «${cat}»?\n\nВ ней ${count} упражнений. Они перейдут в «Без категории».`
       : `Удалить категорию «${cat}»?`;
     if (!window.confirm(message)) return;
-        setState(s => ({
+    setState(s => ({
       ...s,
       customCategories: (s.customCategories ?? []).filter(c => c !== normalized),
       exercises: s.exercises.map(e => normalizeMuscle(e.muscle) === normalized ? { ...e, muscle: '' } : e)
@@ -589,7 +679,7 @@ export default function App() {
         if (!window.confirm(message)) return;
         downloadBackup(state);
         notify('Бэкап текущих данных сохранён. Применяю импорт…');
-         setTimeout(() => {
+        setTimeout(() => {
           setState(ensureState(candidate));
           notify('Резервная копия импортирована.');
         }, 300);
@@ -613,7 +703,7 @@ export default function App() {
     { id: 'profile', label: 'Профиль', icon: CircleUserRound }
   ];
 
-    const orderedCategories = useMemo(() => {
+  const orderedCategories = useMemo(() => {
     const result: string[] = [];
     const seen = new Set<string>();
     for (const c of DEFAULT_CATEGORIES) { result.push(c); seen.add(c); }
@@ -732,7 +822,7 @@ export default function App() {
               </div>
               {!exercise.collapsed && <div className="sets">
                 <div className="set-header"><span>СЕТ</span><span>ВЕС, КГ</span><span>ПОВТОРЫ</span><span></span><span>✓</span></div>
-                  {exercise.sets.map((set, i) => {
+                {exercise.sets.map((set, i) => {
                   const noteKey = `${exercise.id}-${set.id}`;
                   const showNote = openNotes[noteKey] || Boolean(set.note && set.note.trim());
                   const prevSet = i > 0 ? exercise.sets[i - 1] : null;
@@ -987,41 +1077,207 @@ export default function App() {
         </section>}
 
         {tab === 'history' && <section>
-          <p className="eyebrow">ТВОЯ ДИНАМИКА</p><h1>История.</h1><p className="intro">Все завершённые тренировки и показатели, пересчитываемые из истории.</p>
-          <div className="stats-grid"><Metric label="ТРЕНИРОВОК" value={String(state.workouts.length)} note="всего" /><Metric label="ОБЪЁМ" value={fmt(state.workouts.reduce((n, w) => n + volume(w), 0))} note="кг × повторы" /><Metric label="ВРЕМЯ" value={String(state.workouts.reduce((n, w) => n + durationMinutes(w.startedAt, w.endedAt), 0))} note="минут" /><Metric label="XP" value={String(xp)} note={`уровень ${level}`} /></div>
-          {state.workouts.length ? <div className="history-list">{state.workouts.map(w => <article className="panel history-card" key={w.id}><div className="history-top"><div><h3>{w.name}</h3><p>{localDate(w.endedAt)}, {localTime(w.startedAt)}–{localTime(w.endedAt)} · {formatDuration(w.startedAt, w.endedAt)}</p></div><button className="icon-button subtle" aria-label="Удалить тренировку" onClick={() => deleteWorkout(w.id)}><Trash2 size={16} /></button></div><div className="history-metrics"><span><Dumbbell size={14} /> {w.exercises.length} упр.</span><span><Check size={14} /> {setCount(w)} подходов</span><span><Activity size={14} /> {fmt(volume(w))} кг</span><strong>+{w.earnedXp} XP</strong></div><details><summary>Упражнения и подходы</summary>{w.exercises.map(e => {
-            const doneSets = e.sets.filter(s => s.done);
-            return (
-                <div className="history-exercise" key={e.id}>
-                <div className="history-exercise-title">
-                  <b>{e.name}</b>
-                  <button
-                    className="chart-trigger"
-                    aria-label="График прогресса"
-                    onClick={() => setGraphExercise({ id: e.exerciseId, name: e.name })}
-                  >
-                    <TrendingUp size={14} />
+          <p className="eyebrow">ТВОЯ ДИНАМИКА</p>
+          <h1>История.</h1>
+          <p className="intro">Все завершённые тренировки и показатели, пересчитываемые из истории.</p>
+
+          <div className="history-tabs">
+            <button
+              className={`library-tab ${historyView === 'list' ? 'active' : ''}`}
+              onClick={() => setHistoryView('list')}
+            >
+              <BarChart3 size={20} /><span>Список</span>
+            </button>
+            <button
+              className={`library-tab ${historyView === 'calendar' ? 'active' : ''}`}
+              onClick={openCalendar}
+            >
+              <Calendar size={20} /><span>Календарь</span>
+            </button>
+          </div>
+
+          {historyView === 'list' && (
+            <>
+              <div className="stats-grid">
+                <Metric label="ТРЕНИРОВОК" value={String(state.workouts.length)} note="всего" />
+                <Metric label="ОБЪЁМ" value={fmt(state.workouts.reduce((n, w) => n + volume(w), 0))} note="кг × повторы" />
+                <Metric label="ВРЕМЯ" value={String(state.workouts.reduce((n, w) => n + durationMinutes(w.startedAt, w.endedAt), 0))} note="минут" />
+                <Metric label="XP" value={String(xp)} note={`уровень ${level}`} />
+              </div>
+              {state.workouts.length ? <div className="history-list">{state.workouts.map(w => <article className="panel history-card" key={w.id}>
+                <div className="history-top"><div><h3>{w.name}</h3><p>{localDate(w.endedAt)}, {localTime(w.startedAt)}–{localTime(w.endedAt)} · {formatDuration(w.startedAt, w.endedAt)}</p></div><button className="icon-button subtle" aria-label="Удалить тренировку" onClick={() => deleteWorkout(w.id)}><Trash2 size={16} /></button></div>
+                <div className="history-metrics"><span><Dumbbell size={14} /> {w.exercises.length} упр.</span><span><Check size={14} /> {setCount(w)} подходов</span><span><Activity size={14} /> {fmt(volume(w))} кг</span><strong>+{w.earnedXp} XP</strong></div>
+                <details><summary>Упражнения и подходы</summary>{w.exercises.map(e => {
+                  const doneSets = e.sets.filter(s => s.done);
+                  return (
+                    <div className="history-exercise" key={e.id}>
+                      <div className="history-exercise-title">
+                        <b>{e.name}</b>
+                        <button
+                          className="chart-trigger"
+                          aria-label="График прогресса"
+                          onClick={() => setGraphExercise({ id: e.exerciseId, name: e.name })}
+                        >
+                          <TrendingUp size={14} />
+                        </button>
+                      </div>
+                      {doneSets.length === 0 ? (
+                        <span className="history-empty-note">Нет отмеченных подходов</span>
+                      ) : (
+                        <div className="history-sets-list">
+                          {doneSets.map((s, idx) => (
+                            <div key={s.id} className="history-set">
+                              <span className="history-set-main">Подход {idx + 1}: {s.weight || 0} кг × {s.reps || 0}</span>
+                              {s.note && s.note.trim() && (
+                                <span className="history-set-note">{s.note}</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}</details>
+              </article>)}</div> : <Empty title="История пока пуста" text="Заверши первую тренировку. Она появится здесь вместе с деталями подходов." />}
+              {state.workouts.length > 0 && (
+                <button className="text-danger clear-history-bottom" onClick={clearHistory}>Очистить всю историю</button>
+              )}
+            </>
+          )}
+
+          {historyView === 'calendar' && (
+            <>
+              <div className="calendar-card">
+                <div className="calendar-header">
+                  <button className="calendar-nav" onClick={goToPrevMonth} aria-label="Предыдущий месяц">
+                    <ChevronLeft size={20} />
+                  </button>
+                  <div className="calendar-month">{formatMonthYear(calendarDate)}</div>
+                  <button className="calendar-nav" onClick={goToNextMonth} aria-label="Следующий месяц">
+                    <ChevronRight size={20} />
                   </button>
                 </div>
-                {doneSets.length === 0 ? (
-                  <span className="history-empty-note">Нет отмеченных подходов</span>
-                ) : (
-                  <div className="history-sets-list">
-                    {doneSets.map((s, idx) => (
-                      <div key={s.id} className="history-set">
-                        <span className="history-set-main">Подход {idx + 1}: {s.weight || 0} кг × {s.reps || 0}</span>
-                        {s.note && s.note.trim() && (
-                          <span className="history-set-note">{s.note}</span>
-                        )}
-                      </div>
-                    ))}
+
+                <div className="calendar-weekdays">
+                  {WEEKDAYS.map(d => <div key={d} className="calendar-weekday">{d}</div>)}
+                </div>
+
+                <div className="calendar-grid">
+                  {calendarCells.map((date, i) => {
+                    if (!date) return <div key={`empty-${i}`} className="calendar-day empty" />;
+                    const key = dayKeyFromDate(date);
+                    const isToday = key === todayKey;
+                    const isSelected = key === selectedDay;
+                    const hasWorkout = Boolean(workoutsByDay[key]?.length);
+                    const isFuture = date.getTime() > Date.now() && !isToday;
+                    const classes = [
+                      'calendar-day',
+                      isToday ? 'today' : '',
+                      isSelected ? 'selected' : '',
+                      hasWorkout ? 'has-workout' : '',
+                      isFuture ? 'future' : ''
+                    ].filter(Boolean).join(' ');
+                    return (
+                      <button
+                        key={key}
+                        className={classes}
+                        onClick={() => selectDay(key)}
+                        aria-label={`${date.getDate()} ${MONTH_NAMES[date.getMonth()]}${hasWorkout ? ', есть тренировка' : ''}`}
+                      >
+                        <span className="calendar-day-num">{date.getDate()}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="calendar-metrics">
+                <div className="metric">
+                  <span className="metric-label">ТРЕНИРОВОК</span>
+                  <strong className="metric-value">{monthWorkouts.length}</strong>
+                  <small className="metric-note">за месяц</small>
+                </div>
+                <div className="metric">
+                  <span className="metric-label">ОБЪЁМ</span>
+                  <strong className="metric-value">{fmt(monthVolume)}</strong>
+                  <small className="metric-note">кг</small>
+                </div>
+                <div className="metric">
+                  <span className="metric-label">XP</span>
+                  <strong className="metric-value">{monthXp}</strong>
+                  <small className="metric-note">за месяц</small>
+                </div>
+              </div>
+
+              {selectedDay && (
+                <div className="calendar-day-details">
+                  <div className="calendar-day-title">
+                    {new Date(selectedDay + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}
+                    {selectedDay === todayKey && <span className="calendar-day-badge">сегодня</span>}
                   </div>
+                  {(workoutsByDay[selectedDay]?.length || 0) === 0 ? (
+                    <div className="calendar-day-empty">Нет тренировок в этот день</div>
+                  ) : (
+                    workoutsByDay[selectedDay].map(w => (
+                      <div className="calendar-workout" key={w.id}>
+                        <div className="calendar-workout-top">
+                          <div>
+                            <b>{w.name}</b>
+                            <small>{localTime(w.startedAt)}–{localTime(w.endedAt)} · {formatDuration(w.startedAt, w.endedAt)}</small>
+                          </div>
+                          <button
+                            className="icon-button subtle"
+                            aria-label="Удалить тренировку"
+                            onClick={() => deleteWorkout(w.id)}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                        <div className="calendar-workout-meta">
+                          <span>{w.exercises.length} упр.</span>
+                          <span>·</span>
+                          <span>{setCount(w)} подходов</span>
+                          <span>·</span>
+                          <span>{fmt(volume(w))} кг</span>
+                          <strong>+{w.earnedXp} XP</strong>
+                        </div>
+                        <button className="calendar-workout-repeat" onClick={() => startFromWorkout(w)}>
+                          <RefreshCw size={14} /> Повторить
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {!selectedDay && (
+                <div className="calendar-hint">Выбери день в календаре, чтобы увидеть тренировки.</div>
+              )}
+
+              <div className="muscle-stats">
+                <div className="muscle-stats-title">Мышцы за 30 дней</div>
+                {muscleStatsSorted.length === 0 ? (
+                  <div className="muscle-stats-empty">Нет данных за последние 30 дней</div>
+                ) : (
+                  muscleStatsSorted.map(([cat, count]) => (
+                    <div className="muscle-stat-row" key={cat}>
+                      <div className="muscle-stat-label">{cat}</div>
+                      <div className="muscle-stat-track">
+                        <div
+                          className="muscle-stat-fill"
+                          style={{ width: `${(count / maxMuscleValue) * 100}%` }}
+                        />
+                      </div>
+                      <div className="muscle-stat-count">{count}</div>
+                    </div>
+                  ))
                 )}
               </div>
-            );
-          })}</details></article>)}</div> : <Empty title="История пока пуста" text="Заверши первую тренировку. Она появится здесь вместе с деталями подходов." />}
-          {state.workouts.length > 0 && (
-            <button className="text-danger clear-history-bottom" onClick={clearHistory}>Очистить всю историю</button>
+
+              {state.workouts.length > 0 && (
+                <button className="text-danger clear-history-bottom" onClick={clearHistory}>Очистить всю историю</button>
+              )}
+            </>
           )}
         </section>}
 
@@ -1305,7 +1561,7 @@ export default function App() {
         </div>
       )}
 
-            {graphExercise && (
+      {graphExercise && (
         <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setGraphExercise(null); }}>
           <section className="picker-modal" role="dialog" aria-modal="true" aria-labelledby="graph-title">
             <div className="modal-head">
