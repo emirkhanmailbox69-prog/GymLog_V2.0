@@ -535,40 +535,46 @@ export default function App() {
     setOpenNotes(prev => ({ ...prev, [key]: !prev[key] }));
   }
 
-    function getExerciseStats(exerciseId: string): {
+        function getExerciseStats(exerciseId: string): {
     points: { date: number; value: number }[];
     bestWeight: number;
     bestReps: number;
+    bestDate: number | null;
     best1RM: number;
+    totalWorkouts: number;
   } {
     const sorted = [...state.workouts].reverse();
     const points: { date: number; value: number }[] = [];
     let bestWeight = 0;
     let bestReps = 0;
+    let bestDate: number | null = null;
     let best1RM = 0;
+    let totalWorkouts = 0;
 
     for (const w of sorted) {
       const ex = w.exercises.find(e => e.exerciseId === exerciseId);
       if (!ex) continue;
       const doneSets = ex.sets.filter(s => s.done);
       if (doneSets.length === 0) continue;
-      const vol = doneSets.reduce(
-        (n, s) => n + (Number(s.weight) || 0) * (Number(s.reps) || 0),
-        0
-      );
-      if (vol > 0) {
-        points.push({ date: w.endedAt, value: vol });
-      }
+      totalWorkouts++;
+
+      let maxWeightInWorkout = 0;
       for (const s of doneSets) {
         const wt = Number(s.weight) || 0;
         const rp = Number(s.reps) || 0;
+        if (wt > maxWeightInWorkout) maxWeightInWorkout = wt;
         if (wt <= 0 || rp <= 0) continue;
-        if (wt > bestWeight) {
+        if (wt > bestWeight || (wt === bestWeight && rp > bestReps)) {
           bestWeight = wt;
           bestReps = rp;
+          bestDate = w.endedAt;
         }
         const epley = wt * (1 + rp / 30);
         if (epley > best1RM) best1RM = epley;
+      }
+
+      if (maxWeightInWorkout > 0) {
+        points.push({ date: w.endedAt, value: maxWeightInWorkout });
       }
     }
 
@@ -576,7 +582,9 @@ export default function App() {
       points: points.slice(-12),
       bestWeight,
       bestReps,
-      best1RM: Math.round(best1RM * 10) / 10
+      bestDate,
+      best1RM: Math.round(best1RM * 10) / 10,
+      totalWorkouts
     };
   }
 
@@ -1860,36 +1868,52 @@ export default function App() {
         </div>
       )}
 
-            {graphExercise && (() => {
+                  {graphExercise && (() => {
         const stats = getExerciseStats(graphExercise.id);
         return (
           <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setGraphExercise(null); }}>
-            <section className="picker-modal" role="dialog" aria-modal="true" aria-labelledby="graph-title">
+            <section className="picker-modal graph-modal" role="dialog" aria-modal="true" aria-labelledby="graph-title">
               <div className="modal-head">
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <p className="eyebrow">ПРОГРЕСС</p>
-                  <h2 id="graph-title">{graphExercise.name}</h2>
+                  <h2 id="graph-title" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{graphExercise.name}</h2>
                 </div>
                 <button className="icon-button" onClick={() => setGraphExercise(null)} aria-label="Закрыть">
                   <X size={20} />
                 </button>
               </div>
 
-              {stats.bestWeight > 0 && (
-                <div className="chart-stats">
-                  <div className="chart-stat">
-                    <span className="chart-stat-label">Лучший подход</span>
-                    <span className="chart-stat-value">{stats.bestWeight} кг × {stats.bestReps}</span>
+              {stats.bestWeight > 0 ? (
+                <>
+                  <div className="chart-stats">
+                    <div className="chart-stat">
+                      <span className="chart-stat-label">Лучший вес</span>
+                      <span className="chart-stat-value">{stats.bestWeight} кг</span>
+                      {stats.bestDate && <span className="chart-stat-date">{localDate(stats.bestDate)}</span>}
+                    </div>
+                    <div className="chart-stat">
+                      <span className="chart-stat-label">Повторения</span>
+                      <span className="chart-stat-value">{stats.bestReps} раз</span>
+                      <span className="chart-stat-date">с этим весом</span>
+                    </div>
+                    <div className="chart-stat">
+                      <span className="chart-stat-label">Максимум</span>
+                      <span className="chart-stat-value">≈ {stats.best1RM} кг</span>
+                      <span className="chart-stat-date">на 1 раз</span>
+                    </div>
                   </div>
-                  <div className="chart-stat">
-                    <span className="chart-stat-label">Расчётный 1ПМ</span>
-                    <span className="chart-stat-value">≈ {stats.best1RM} кг</span>
-                  </div>
-                </div>
-              )}
 
-              <ProgressChart points={stats.points} />
-              <p className="chart-caption">Объём = вес × повторы за все выполненные подходы. 1ПМ — оценка по формуле Эпли (вес × (1 + повторы / 30)), не фактический подъём.</p>
+                  <div className="graph-chart-wrap">
+                    <ProgressChart points={stats.points} />
+                  </div>
+
+                  <p className="chart-caption">
+                    Максимальный вес за тренировку · {stats.totalWorkouts} {stats.totalWorkouts === 1 ? 'тренировка' : stats.totalWorkouts < 5 ? 'тренировки' : 'тренировок'}
+                  </p>
+                </>
+              ) : (
+                <Empty title="Нет данных с весом" text="Отметь выполненные подходы с ненулевым весом, чтобы увидеть прогресс." />
+              )}
             </section>
           </div>
         );
@@ -2081,11 +2105,11 @@ function ActivityRings({ rings }: { rings: { percent: number; color: string }[] 
 }
 function ProgressChart({ points }: { points: { date: number; value: number }[] }) {
   if (points.length < 2) {
-    return <Empty title="Мало данных" text="Нужно минимум 2 тренировки с этим упражнением, чтобы построить график." />;
+    return <Empty title="Мало данных" text="Нужно минимум 2 тренировки с этим упражнением." />;
   }
-  const W = 300;
-  const H = 140;
-  const pad = { top: 16, right: 16, bottom: 28, left: 44 };
+  const W = 360;
+  const H = 240;
+  const pad = { top: 20, right: 16, bottom: 34, left: 52 };
   const innerW = W - pad.left - pad.right;
   const innerH = H - pad.top - pad.bottom;
   const values = points.map(p => p.value);
@@ -2106,22 +2130,22 @@ function ProgressChart({ points }: { points: { date: number; value: number }[] }
   return (
     <div className="progress-chart-wrap">
       <svg viewBox={`0 0 ${W} ${H}`} className="progress-chart" aria-hidden="true">
-        <text x={pad.left - 6} y={pad.top + 4} textAnchor="end" className="chart-label">{Math.round(maxV).toLocaleString('ru-RU')}</text>
-        <text x={pad.left - 6} y={pad.top + innerH} textAnchor="end" className="chart-label">{Math.round(minV).toLocaleString('ru-RU')}</text>
-        <line x1={pad.left} y1={pad.top} x2={pad.left} y2={pad.top + innerH} stroke="rgba(255,255,255,.08)" />
-        <line x1={pad.left} y1={pad.top + innerH} x2={pad.left + innerW} y2={pad.top + innerH} stroke="rgba(255,255,255,.08)" />
-        <line x1={pad.left} y1={pad.top + innerH / 2} x2={pad.left + innerW} y2={pad.top + innerH / 2} stroke="rgba(255,255,255,.05)" strokeDasharray="2 4" />
-                <defs>
+        <defs>
           <linearGradient id="chartAreaGradient" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="rgb(208,244,119)" stopOpacity="0.35" />
             <stop offset="100%" stopColor="rgb(208,244,119)" stopOpacity="0" />
           </linearGradient>
         </defs>
+        <text x={pad.left - 8} y={pad.top + 4} textAnchor="end" className="chart-label">{Math.round(maxV)} кг</text>
+        <text x={pad.left - 8} y={pad.top + innerH} textAnchor="end" className="chart-label">{Math.round(minV)} кг</text>
+        <line x1={pad.left} y1={pad.top} x2={pad.left} y2={pad.top + innerH} stroke="rgba(255,255,255,.08)" />
+        <line x1={pad.left} y1={pad.top + innerH} x2={pad.left + innerW} y2={pad.top + innerH} stroke="rgba(255,255,255,.08)" />
+        <line x1={pad.left} y1={pad.top + innerH / 2} x2={pad.left + innerW} y2={pad.top + innerH / 2} stroke="rgba(255,255,255,.05)" strokeDasharray="2 4" />
         <path d={areaD} fill="url(#chartAreaGradient)" />
-        <path d={pathD} fill="none" stroke="var(--lime)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-        {coords.map((c, i) => <circle key={i} cx={c.x} cy={c.y} r={3} fill="var(--lime)" />)}
-        <text x={coords[0].x} y={H - 8} textAnchor="start" className="chart-label">{fmtShort(coords[0].date)}</text>
-        <text x={coords[coords.length - 1].x} y={H - 8} textAnchor="end" className="chart-label">{fmtShort(coords[coords.length - 1].date)}</text>
+        <path d={pathD} fill="none" stroke="var(--lime)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+        {coords.map((c, i) => <circle key={i} cx={c.x} cy={c.y} r={4} fill="var(--lime)" />)}
+        <text x={coords[0].x} y={H - 10} textAnchor="start" className="chart-label">{fmtShort(coords[0].date)}</text>
+        <text x={coords[coords.length - 1].x} y={H - 10} textAnchor="end" className="chart-label">{fmtShort(coords[coords.length - 1].date)}</text>
       </svg>
     </div>
   );
