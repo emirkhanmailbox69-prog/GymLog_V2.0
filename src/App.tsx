@@ -167,9 +167,17 @@ export default function App() {
     if (!saveState(state)) notify('Не удалось сохранить локально. Экспортируй резервную копию.');
   }, [state]);
 
-  useEffect(() => {
-    ensureAnonymousAuth().catch(err => console.error('Anonymous auth error:', err));
-    const unsubscribe = subscribeToAuth(setUser);
+    useEffect(() => {
+    let authResolved = false;
+    const unsubscribe = subscribeToAuth((u) => {
+      if (!authResolved) {
+        authResolved = true;
+        if (!u) {
+          ensureAnonymousAuth().catch(err => console.error('Anonymous auth error:', err));
+        }
+      }
+      setUser(u);
+    });
     return unsubscribe;
   }, []);
 
