@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Activity, Award, BarChart3, BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight,
-  ChevronUp, CircleUserRound, Cloud, Clock3, Dumbbell, FileDown, History, Home, MessageSquare,
-  Pencil, Plus, RefreshCw, Save, ShieldCheck, Star, Target, Trash2, Trophy, X, Zap
+  ChevronUp, CircleUserRound, Cloud, Clock3, Copy, Dumbbell, FileDown, History, Home, MessageSquare,
+  Pencil, Plus, RefreshCw, Save, ShieldCheck, Star, Target, Trash2, TrendingUp, Trophy, X, Zap
 } from 'lucide-react';
 import type { User } from 'firebase/auth';
 import type { ActiveWorkout, AppState, Exercise, Program, SetEntry, Tab, Workout, WorkoutExercise } from './types';
@@ -86,6 +86,7 @@ export default function App() {
   const [historyPickerOpen, setHistoryPickerOpen] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [xpPop, setXpPop] = useState<number | null>(null);
+    const [graphExercise, setGraphExercise] = useState<{ id: string; name: string } | null>(null);
 
   // Программы
   const [programsView, setProgramsView] = useState<'list' | 'library'>('list');
@@ -311,6 +312,24 @@ export default function App() {
     setOpenNotes(prev => ({ ...prev, [key]: !prev[key] }));
   }
 
+    function getExerciseProgress(exerciseId: string): { date: number; value: number }[] {
+    const sorted = [...state.workouts].reverse();
+    const points: { date: number; value: number }[] = [];
+    for (const w of sorted) {
+      const ex = w.exercises.find(e => e.exerciseId === exerciseId);
+      if (!ex) continue;
+      const doneSets = ex.sets.filter(s => s.done);
+      if (doneSets.length === 0) continue;
+      const vol = doneSets.reduce(
+        (n, s) => n + (Number(s.weight) || 0) * (Number(s.reps) || 0),
+        0
+      );
+      if (vol === 0) continue;
+      points.push({ date: w.endedAt, value: vol });
+    }
+    return points.slice(-12);
+  }
+  
   function finishWorkout() {
     if (!currentWorkout || finishing) return;
     const earnedXp = xpFor(currentWorkout);
@@ -713,13 +732,26 @@ export default function App() {
               </div>
               {!exercise.collapsed && <div className="sets">
                 <div className="set-header"><span>СЕТ</span><span>ВЕС, КГ</span><span>ПОВТОРЫ</span><span></span><span>✓</span></div>
-                {exercise.sets.map((set, i) => {
+                  {exercise.sets.map((set, i) => {
                   const noteKey = `${exercise.id}-${set.id}`;
                   const showNote = openNotes[noteKey] || Boolean(set.note && set.note.trim());
+                  const prevSet = i > 0 ? exercise.sets[i - 1] : null;
+                  const isEmptySet = !set.weight && !set.reps;
+                  const canCopy = Boolean(prevSet && isEmptySet && (prevSet.weight || prevSet.reps));
                   return (
                     <div key={set.id}>
                       <div className={`set-row ${set.done ? 'set-done' : ''}`}>
-                        <span className="set-index">{i + 1}</span>
+                        {canCopy ? (
+                          <button
+                            className="set-copy"
+                            aria-label="Скопировать из предыдущего подхода"
+                            onClick={() => prevSet && updateSet(exercise.id, set.id, { weight: prevSet.weight, reps: prevSet.reps })}
+                          >
+                            <Copy size={13} />
+                          </button>
+                        ) : (
+                          <span className="set-index">{i + 1}</span>
+                        )}
                         <input aria-label={`Вес, подход ${i + 1}`} className="set-input" type="number" min="0" step="0.5" placeholder="—" value={set.weight} onChange={e => updateSet(exercise.id, set.id, { weight: e.target.value })} />
                         <input aria-label={`Повторы, подход ${i + 1}`} className="set-input" type="number" min="0" step="1" placeholder="—" value={set.reps} onChange={e => updateSet(exercise.id, set.id, { reps: e.target.value })} />
                         <button
@@ -960,8 +992,17 @@ export default function App() {
           {state.workouts.length ? <div className="history-list">{state.workouts.map(w => <article className="panel history-card" key={w.id}><div className="history-top"><div><h3>{w.name}</h3><p>{localDate(w.endedAt)}, {localTime(w.startedAt)}–{localTime(w.endedAt)} · {formatDuration(w.startedAt, w.endedAt)}</p></div><button className="icon-button subtle" aria-label="Удалить тренировку" onClick={() => deleteWorkout(w.id)}><Trash2 size={16} /></button></div><div className="history-metrics"><span><Dumbbell size={14} /> {w.exercises.length} упр.</span><span><Check size={14} /> {setCount(w)} подходов</span><span><Activity size={14} /> {fmt(volume(w))} кг</span><strong>+{w.earnedXp} XP</strong></div><details><summary>Упражнения и подходы</summary>{w.exercises.map(e => {
             const doneSets = e.sets.filter(s => s.done);
             return (
-              <div className="history-exercise" key={e.id}>
-                <b>{e.name}</b>
+                <div className="history-exercise" key={e.id}>
+                <div className="history-exercise-title">
+                  <b>{e.name}</b>
+                  <button
+                    className="chart-trigger"
+                    aria-label="График прогресса"
+                    onClick={() => setGraphExercise({ id: e.exerciseId, name: e.name })}
+                  >
+                    <TrendingUp size={14} />
+                  </button>
+                </div>
                 {doneSets.length === 0 ? (
                   <span className="history-empty-note">Нет отмеченных подходов</span>
                 ) : (
@@ -1264,6 +1305,24 @@ export default function App() {
         </div>
       )}
 
+            {graphExercise && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setGraphExercise(null); }}>
+          <section className="picker-modal" role="dialog" aria-modal="true" aria-labelledby="graph-title">
+            <div className="modal-head">
+              <div>
+                <p className="eyebrow">ПРОГРЕСС</p>
+                <h2 id="graph-title">{graphExercise.name}</h2>
+              </div>
+              <button className="icon-button" onClick={() => setGraphExercise(null)} aria-label="Закрыть">
+                <X size={20} />
+              </button>
+            </div>
+            <ProgressChart points={getExerciseProgress(graphExercise.id)} />
+            <p className="chart-caption">Объём = вес × повторы за все выполненные подходы. Последние 12 тренировок.</p>
+          </section>
+        </div>
+      )}
+
       {finishing && <div className="finish-flash" />}
       {xpPop !== null && (
         <div className="xp-pop" role="status">
@@ -1363,5 +1422,46 @@ function ActivityRings({ rings }: { rings: { percent: number; color: string }[] 
         );
       })}
     </svg>
+  );
+}
+function ProgressChart({ points }: { points: { date: number; value: number }[] }) {
+  if (points.length < 2) {
+    return <Empty title="Мало данных" text="Нужно минимум 2 тренировки с этим упражнением, чтобы построить график." />;
+  }
+  const W = 300;
+  const H = 140;
+  const pad = { top: 16, right: 16, bottom: 28, left: 44 };
+  const innerW = W - pad.left - pad.right;
+  const innerH = H - pad.top - pad.bottom;
+  const values = points.map(p => p.value);
+  const minV = Math.min(...values);
+  const maxV = Math.max(...values);
+  const range = Math.max(1, maxV - minV);
+  const xStep = innerW / (points.length - 1);
+  const coords = points.map((p, i) => ({
+    x: pad.left + i * xStep,
+    y: pad.top + innerH - ((p.value - minV) / range) * innerH,
+    value: p.value,
+    date: p.date
+  }));
+  const pathD = coords.map((c, i) => `${i === 0 ? 'M' : 'L'}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
+  const areaD = `${pathD} L${coords[coords.length - 1].x.toFixed(1)},${(pad.top + innerH).toFixed(1)} L${coords[0].x.toFixed(1)},${(pad.top + innerH).toFixed(1)} Z`;
+  const fmtShort = (ts: number) => new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' }).format(ts);
+
+  return (
+    <div className="progress-chart-wrap">
+      <svg viewBox={`0 0 ${W} ${H}`} className="progress-chart" aria-hidden="true">
+        <text x={pad.left - 6} y={pad.top + 4} textAnchor="end" className="chart-label">{Math.round(maxV).toLocaleString('ru-RU')}</text>
+        <text x={pad.left - 6} y={pad.top + innerH} textAnchor="end" className="chart-label">{Math.round(minV).toLocaleString('ru-RU')}</text>
+        <line x1={pad.left} y1={pad.top} x2={pad.left} y2={pad.top + innerH} stroke="rgba(255,255,255,.08)" />
+        <line x1={pad.left} y1={pad.top + innerH} x2={pad.left + innerW} y2={pad.top + innerH} stroke="rgba(255,255,255,.08)" />
+        <line x1={pad.left} y1={pad.top + innerH / 2} x2={pad.left + innerW} y2={pad.top + innerH / 2} stroke="rgba(255,255,255,.05)" strokeDasharray="2 4" />
+        <path d={areaD} fill="rgba(208,244,119,.09)" />
+        <path d={pathD} fill="none" stroke="var(--lime)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+        {coords.map((c, i) => <circle key={i} cx={c.x} cy={c.y} r={3} fill="var(--lime)" />)}
+        <text x={coords[0].x} y={H - 8} textAnchor="start" className="chart-label">{fmtShort(coords[0].date)}</text>
+        <text x={coords[coords.length - 1].x} y={H - 8} textAnchor="end" className="chart-label">{fmtShort(coords[coords.length - 1].date)}</text>
+      </svg>
+    </div>
   );
 }
