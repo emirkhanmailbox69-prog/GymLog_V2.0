@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Activity, Award, BarChart3, BookOpen, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight,
+  Activity, Award, BarChart3, BookOpen, Calendar, Camera, Check, ChevronDown, ChevronLeft, ChevronRight,
   ChevronUp, CircleUserRound, Cloud, Clock3, Copy, Dumbbell, FileDown, History, Home, MessageSquare,
   Pencil, Plus, RefreshCw, Save, ShieldCheck, Star, Target, Trash2, TrendingUp, Trophy, X, Zap
 } from 'lucide-react';
@@ -809,8 +809,54 @@ export default function App() {
     reader.readAsText(file);
   }
 
-  function updateProfile(name: string, bodyWeight: string) {
-    setState(s => ({ ...s, profile: { name, bodyWeight } }));
+    function updateProfile(name: string, bodyWeight: string) {
+    setState(s => ({ ...s, profile: { ...s.profile, name, bodyWeight } }));
+  }
+
+  function loadImage(file: File): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+      img.src = url;
+    });
+  }
+
+  async function handleAvatarUpload(file?: File) {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      notify('Выбери файл изображения');
+      return;
+    }
+    try {
+      const img = await loadImage(file);
+      const SIZE = 192;
+      const canvas = document.createElement('canvas');
+      canvas.width = SIZE;
+      canvas.height = SIZE;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas недоступен');
+      const side = Math.min(img.width, img.height);
+      const sx = (img.width - side) / 2;
+      const sy = (img.height - side) / 2;
+      ctx.drawImage(img, sx, sy, side, side, 0, 0, SIZE, SIZE);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+      setState(s => ({ ...s, profile: { ...s.profile, avatar: dataUrl } }));
+      notify('Фото обновлено');
+    } catch (err) {
+      console.error('Avatar upload error:', err);
+      notify('Не удалось загрузить фото');
+    }
+  }
+
+  function removeAvatar() {
+    if (!window.confirm('Удалить фото профиля?')) return;
+    setState(s => ({
+      ...s,
+      profile: { name: s.profile.name, bodyWeight: s.profile.bodyWeight }
+    }));
+    notify('Фото удалено');
   }
 
   const navItems: { id: Tab; label: string; icon: typeof Home }[] = [
@@ -840,8 +886,10 @@ export default function App() {
           <span className="brand-mark"><Activity size={19} strokeWidth={2.8} /></span>
           <span><b>GYMLOG</b><small>TRAINING JOURNAL</small></span>
         </button>
-        <button className="avatar" onClick={() => setTab('profile')} aria-label="Открыть профиль">
-          {(state.profile.name.trim()[0] || 'А').toLocaleUpperCase('ru-RU')}
+          <button className="avatar" onClick={() => setTab('profile')} aria-label="Открыть профиль">
+          {state.profile.avatar
+            ? <img src={state.profile.avatar} alt="" />
+            : (state.profile.name.trim()[0] || 'А').toLocaleUpperCase('ru-RU')}
         </button>
       </header>
 
@@ -1448,11 +1496,28 @@ export default function App() {
           <p className="eyebrow">ТВОИ ДАННЫЕ</p>
           <h1>Профиль.</h1>
 
-          <div className="profile-hero">
-            <div className="profile-avatar">{(state.profile.name.trim()[0] || 'А').toLocaleUpperCase('ru-RU')}</div>
+                    <div className="profile-hero">
+            <label className="profile-avatar profile-avatar-editable">
+              {state.profile.avatar
+                ? <img src={state.profile.avatar} alt="Аватар" />
+                : (state.profile.name.trim()[0] || 'А').toLocaleUpperCase('ru-RU')}
+              <span className="profile-avatar-badge"><Camera size={12} /></span>
+              <input
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={e => {
+                  handleAvatarUpload(e.target.files?.[0]);
+                  e.target.value = '';
+                }}
+              />
+            </label>
             <div className="profile-hero-info">
               <b>{state.profile.name || 'Атлет'}</b>
               <small>{state.profile.bodyWeight ? `${state.profile.bodyWeight} кг` : 'Вес не указан'}</small>
+              {state.profile.avatar && (
+                <button className="profile-avatar-remove" onClick={removeAvatar}>Удалить фото</button>
+              )}
             </div>
           </div>
 
