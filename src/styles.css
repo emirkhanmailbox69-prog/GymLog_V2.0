@@ -729,3 +729,76 @@ h3{font:600 16px/1.3 -apple-system,sans-serif;margin-bottom:6px}
     height: 32px;
   }
 }
+/* ===== Тач-таргеты: минимум 44×44px ===== */
+.icon-button {
+  position: relative;
+  touch-action: manipulation;
+}
+.icon-button::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+}
+.icon-button.subtle::before {
+  inset: -6px;
+}
+
+.set-note-toggle {
+  position: relative;
+  touch-action: manipulation;
+}
+.set-note-toggle::before {
+  content: '';
+  position: absolute;
+  inset: -6px -8px;
+}
+
+.set-copy {
+  position: relative;
+  touch-action: manipulation;
+}
+.set-copy::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+}
+
+.chart-trigger {
+  position: relative;
+  touch-action: manipulation;
+}
+.chart-trigger::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+
+.category-tools .icon-button.subtle::before {
+  inset: -8px;
+}
+
+/* Поле ввода — 44px по высоте (было 40) */
+.set-input {
+  height: 44px;
+}
+
+/* Текстовые кнопки: «Вся история», «Отмена», «‹ Программы» — увеличить область */
+.text-link {
+  padding: 10px 8px;
+  margin: -4px -8px;
+  touch-action: manipulation;
+}
+
+.back-link {
+  padding: 12px 8px;
+  margin: 4px -8px 8px;
+  touch-action: manipulation;
+}
+
+/* На узких экранах — ещё чуть больше для мелких */
+@media (max-width: 380px) {
+  .set-note-toggle::before,
+  .set-copy::before {
+    inset: -10px -6px;
+  }
+}
