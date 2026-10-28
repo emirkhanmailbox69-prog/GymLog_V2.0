@@ -1,7 +1,8 @@
 import { initializeApp } from 'firebase/app';
 import {
-  getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider,
-  linkWithPopup, signInWithPopup, signOut
+  getAuth, signInAnonymously, onAuthStateChanged, signOut,
+  linkWithCredential, EmailAuthProvider, signInWithEmailAndPassword,
+  sendPasswordResetEmail
 } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import {
@@ -27,27 +28,37 @@ export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
 });
 
-const googleProvider = new GoogleAuthProvider();
-
 export function subscribeToAuth(callback: (user: User | null) => void) {
   return onAuthStateChanged(auth, callback);
 }
 
+/** Фоновый анонимный вход — нужен, чтобы Firestore работал до регистрации. Пользователь этого не видит. */
 export async function ensureAnonymousAuth(): Promise<void> {
   if (auth.currentUser) return;
   await signInAnonymously(auth);
 }
 
-export async function linkAnonymousWithGoogle(): Promise<User> {
-  if (!auth.currentUser) throw new Error('Нет активного пользователя для привязки.');
-  const result = await linkWithPopup(auth.currentUser, googleProvider);
+/** Привязка email+пароль к текущему (анонимному) аккаунту. UID сохраняется, данные остаются. */
+export async function linkWithEmail(email: string, password: string): Promise<User> {
+  if (!auth.currentUser) throw new Error('Нет активного пользователя.');
+  const credential = EmailAuthProvider.credential(email, password);
+  const result = await linkWithCredential(auth.currentUser, credential);
   return result.user;
 }
 
-export async function signInWithGoogleExisting(): Promise<User> {
-  const result = await signInWithPopup(auth, googleProvider);
+/** Вход в существующий аккаунт по email+пароль. Переключает на другой UID, данные подтянутся из Firestore. */
+export async function signInWithEmail(email: string, password: string): Promise<User> {
+  if (auth.currentUser?.isAnonymous) {
+    await signOut(auth);
+  }
+  const result = await signInWithEmailAndPassword(auth, email, password);
   return result.user;
 }
+
+export async function resetPassword(email: string): Promise<void> {
+  await sendPasswordResetEmail(auth, email);
+}
+
 export async function logOut(): Promise<void> {
   await signOut(auth);
 }
