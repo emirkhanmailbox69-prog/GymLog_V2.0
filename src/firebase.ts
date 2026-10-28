@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase/app';
 import {
   getAuth, signInAnonymously, onAuthStateChanged, signOut,
   linkWithCredential, EmailAuthProvider, signInWithEmailAndPassword,
-  sendPasswordResetEmail
+  sendPasswordResetEmail, setPersistence, browserLocalPersistence
 } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import {
@@ -24,6 +24,9 @@ export const firebaseConfigured = true;
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+setPersistence(auth, browserLocalPersistence).catch(err => {
+  console.error('Auth persistence setup failed:', err);
+});
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
 });
