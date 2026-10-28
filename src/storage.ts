@@ -21,10 +21,18 @@ export function initialState(): AppState {
   };
 }
 
+type PartialSettings = Partial<{
+  restSeconds: number;
+  ring1: Partial<{ metric: string; goal: number }>;
+  ring2: Partial<{ metric: string; goal: number }>;
+}>;
+
 export function ensureState(state: Partial<AppState> | null | undefined): AppState {
   const defaults = initialState();
   if (!state || typeof state !== 'object') return defaults;
-  const s = state.settings || {};
+  const s = (state.settings ?? {}) as PartialSettings;
+  const ring1Metric = (s.ring1?.metric as AppState['settings']['ring1']['metric']) ?? defaults.settings.ring1.metric;
+  const ring2Metric = (s.ring2?.metric as AppState['settings']['ring2']['metric']) ?? defaults.settings.ring2.metric;
   return {
     ...defaults,
     ...state,
@@ -32,11 +40,11 @@ export function ensureState(state: Partial<AppState> | null | undefined): AppSta
     settings: {
       restSeconds: s.restSeconds ?? defaults.settings.restSeconds,
       ring1: {
-        metric: s.ring1?.metric ?? defaults.settings.ring1.metric,
+        metric: ring1Metric,
         goal: s.ring1?.goal ?? defaults.settings.ring1.goal
       },
       ring2: {
-        metric: s.ring2?.metric ?? defaults.settings.ring2.metric,
+        metric: ring2Metric,
         goal: s.ring2?.goal ?? defaults.settings.ring2.goal
       }
     },
