@@ -181,6 +181,15 @@ export default function App() {
     return unsubscribe;
   }, []);
 
+    useEffect(() => {
+    if (navigator.storage && navigator.storage.persist) {
+      navigator.storage.persist().catch(() => {
+        /* не критично, просто игнорируем */
+      });
+    }
+  }, []);
+
+  const { lastSyncedAt, isSyncing, syncError, forceSync } = useCloudSync(user, state, setState);
   const { lastSyncedAt, isSyncing, syncError, forceSync } = useCloudSync(user, state, setState);
 
   useEffect(() => {
