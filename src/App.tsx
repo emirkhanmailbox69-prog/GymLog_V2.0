@@ -10,7 +10,7 @@ import { loadState, saveState, downloadBackup, ensureState } from './storage';
 import { starterExercises } from './data';
 import {
   firebaseConfigured, subscribeToAuth, ensureAnonymousAuth,
-  linkAnonymousWithGoogle, signInWithGoogleExisting, logOut
+  logOut, linkWithEmail, signInWithEmail, resetPassword
 } from './firebase';
 import { useCloudSync } from './hooks/useCloudSync';
 
@@ -131,6 +131,14 @@ export default function App() {
   // Редактирование упражнения
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
 
+  // Email/Password
+  const [emailAuthOpen, setEmailAuthOpen] = useState(false);
+  const [emailAuthMode, setEmailAuthMode] = useState<'signup' | 'signin' | 'reset'>('signup');
+  const [emailValue, setEmailValue] = useState('');
+  const [passwordValue, setPasswordValue] = useState('');
+  const [emailAuthLoading, setEmailAuthLoading] = useState(false);
+  const [emailAuthError, setEmailAuthError] = useState<string | null>(null);
+
   const allCategories = useMemo(() => {
     const set = new Set<string>(DEFAULT_CATEGORIES);
     (state.customCategories ?? []).forEach(c => set.add(c));
@@ -186,53 +194,103 @@ export default function App() {
     });
   }
 
-  async function handleLinkGoogle() {
-    try {
-      const linkedUser = await linkAnonymousWithGoogle();
-      setUser(linkedUser);
-      notify(`Прогресс сохранён навсегда: ${linkedUser.email || 'Google-аккаунт'}`);
-    } catch (error: unknown) {
-      const code = (error as { code?: string })?.code || '';
-      const message = (error as { message?: string })?.message || '';
-
-            if (code === 'auth/credential-already-in-use') {
-        const confirmed = window.confirm(
-          'Этот Google-аккаунт уже привязан к GymLog.\n\n' +
-          'Войти в него и загрузить данные из облака?\n' +
-          'Текущие данные на этом устройстве будут заменены облачными.'
-        );
-        if (!confirmed) return;
-        try {
-          const existingUser = await signInWithGoogleExisting();
-          setUser(existingUser);
-          notify(`Вошли: ${existingUser.email || 'Google'}`);
-        } catch (signInError: unknown) {
-          const signInCode = (signInError as { code?: string })?.code || '';
-          notify(`Не удалось войти: ${signInCode || 'ошибка'}`);
-          console.error('SignIn existing error:', signInError);
-        }
-        return;
-      }
-
-      if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
-        notify('Браузер заблокировал окно Google. Открой приложение в Safari (не через ярлык) и попробуй снова.');
-      } else if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-        notify('Окно Google закрыто. Попробуй снова.');
-      } else if (code === 'auth/network-request-failed') {
-        notify('Нет связи с Google. Проверь интернет.');
-      } else {
-        notify(`Не удалось подключить: ${code || message || 'неизвестная ошибка'}`);
-      }
-      console.error('Link error:', error);
-    }
-  }
-
   async function handleLogout() {
     try {
       await logOut();
+      await ensureAnonymousAuth();
       notify('Вы вышли из аккаунта.');
     } catch {
       notify('Ошибка выхода.');
+    }
+  }
+
+  function openEmailAuth(mode: 'signup' | 'signin' | 'reset') {
+    setEmailAuthMode(mode);
+    setEmailValue(user?.email || '');
+    setPasswordValue('');
+    setEmailAuthError(null);
+    setEmailAuthOpen(true);
+  }
+
+  async function handleEmailAuth() {
+    const email = emailValue.trim().toLowerCase();
+    const password = passwordValue;
+    setEmailAuthError(null);
+
+    if (!email || !email.includes('@')) {
+      setEmailAuthError('Введи корректный email');
+      return;
+    }
+
+    if (emailAuthMode === 'reset') {
+      setEmailAuthLoading(true);
+      try {
+        await resetPassword(email);
+        setEmailAuthOpen(false);
+        notify(`Письмо для сброса пароля отправлено на ${email}`);
+      } catch (err: unknown) {
+        const code = (err as { code?: string })?.code || '';
+        if (code === 'auth/user-not-found') setEmailAuthError('Аккаунт с таким email не найден');
+        else if (code === 'auth/invalid-email') setEmailAuthError('Некорректный email');
+        else setEmailAuthError('Не удалось отправить письмо');
+      } finally {
+        setEmailAuthLoading(false);
+      }
+      return;
+    }
+
+    if (password.length < 6) {
+      setEmailAuthError('Пароль минимум 6 символов');
+      return;
+    }
+
+    setEmailAuthLoading(true);
+    try {
+      if (emailAuthMode === 'signup') {
+        try {
+          const linkedUser = await linkWithEmail(email, password);
+          setUser(linkedUser);
+          setEmailAuthOpen(false);
+          setEmailValue('');
+          setPasswordValue('');
+          notify(`Аккаунт создан: ${email}. Данные синхронизируются.`);
+        } catch (err: unknown) {
+          const code = (err as { code?: string })?.code || '';
+          if (code === 'auth/email-already-in-use') {
+            setEmailAuthError('Этот email уже используется. Нажми «Войти» снизу.');
+          } else if (code === 'auth/weak-password') {
+            setEmailAuthError('Пароль слишком простой (минимум 6 символов)');
+          } else if (code === 'auth/credential-already-in-use') {
+            setEmailAuthError('Email уже привязан к другому аккаунту. Нажми «Войти».');
+          } else {
+            setEmailAuthError(`Не удалось: ${code || 'ошибка'}`);
+          }
+        }
+      } else {
+        try {
+          const signedUser = await signInWithEmail(email, password);
+          setUser(signedUser);
+          setEmailAuthOpen(false);
+          setEmailValue('');
+          setPasswordValue('');
+          notify(`Вы вошли: ${email}`);
+        } catch (err: unknown) {
+          const code = (err as { code?: string })?.code || '';
+          if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+            setEmailAuthError('Неверный пароль');
+          } else if (code === 'auth/user-not-found') {
+            setEmailAuthError('Аккаунт не найден. Нажми «Нет аккаунта? Создать».');
+          } else if (code === 'auth/too-many-requests') {
+            setEmailAuthError('Слишком много попыток. Подожди пару минут.');
+          } else if (code === 'auth/invalid-email') {
+            setEmailAuthError('Некорректный email');
+          } else {
+            setEmailAuthError(`Не удалось: ${code || 'ошибка'}`);
+          }
+        }
+      }
+    } finally {
+      setEmailAuthLoading(false);
     }
   }
 
@@ -275,7 +333,7 @@ export default function App() {
     return groups;
   }, [state.exercises]);
 
-  // === Календарь: вычисления ===
+  // === Календарь ===
   const workoutsByDay = useMemo(() => {
     const map: Record<string, Workout[]> = {};
     for (const w of state.workouts) {
@@ -650,7 +708,7 @@ export default function App() {
           throw new Error('Структура резервной копии не поддерживается.');
         }
 
-          const fileDate = raw.exportedAt
+        const fileDate = raw.exportedAt
           ? new Date(raw.exportedAt).toLocaleString('ru-RU', {
               day: 'numeric', month: 'short', year: 'numeric',
               hour: '2-digit', minute: '2-digit'
@@ -696,6 +754,8 @@ export default function App() {
     for (const c of Object.keys(groupedExercises)) { if (!seen.has(c)) { result.push(c); seen.add(c); } }
     return result;
   }, [state.customCategories, groupedExercises]);
+
+  const isRegistered = Boolean(user && !user.isAnonymous);
 
   return (
     <div className="app-shell">
@@ -1350,13 +1410,67 @@ export default function App() {
           </div>
 
           <div className="settings-section">
+            <p className="settings-header">Аккаунт</p>
+            <div className="settings-group">
+              <div className="setting-row">
+                <div className="setting-icon">
+                  {isRegistered ? <ShieldCheck size={17} /> : <CircleUserRound size={17} />}
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <b>
+                    {isRegistered ? (user?.email || 'Аккаунт создан') : 'Не привязан'}
+                  </b>
+                  <small>
+                    {isRegistered
+                      ? 'Данные сохраняются в облако'
+                      : 'Прогресс только на этом устройстве'}
+                  </small>
+                </div>
+                <span className={`status-dot ${isRegistered ? 'status-active' : 'status-pending'}`} />
+              </div>
+
+              {!isRegistered && (
+                <>
+                  <button className="settings-action" onClick={() => openEmailAuth('signup')}>
+                    <Cloud size={17} />
+                    <span><b>Создать аккаунт</b><small>Email и пароль — чтобы прогресс не потерялся</small></span>
+                  </button>
+                  <button className="settings-action" onClick={() => openEmailAuth('signin')}>
+                    <RefreshCw size={17} />
+                    <span><b>Войти в существующий</b><small>Если уже создавал аккаунт на другом устройстве</small></span>
+                  </button>
+                </>
+              )}
+
+              {isRegistered && (
+                <>
+                  <button className="settings-action" onClick={() => openEmailAuth('reset')}>
+                    <Save size={17} />
+                    <span><b>Сбросить пароль</b><small>Письмо на {user?.email || 'твой email'}</small></span>
+                  </button>
+                  <button className="settings-action" onClick={handleLogout}>
+                    <X size={17} />
+                    <span><b>Выйти из аккаунта</b><small>Прогресс останется в облаке</small></span>
+                  </button>
+                </>
+              )}
+            </div>
+
+            {!isRegistered && (
+              <div className="sync-warning">
+                <p>Без аккаунта прогресс хранится только на этом устройстве. Удалишь приложение — данные пропадут.</p>
+              </div>
+            )}
+          </div>
+
+          <div className="settings-section">
             <p className="settings-header">Синхронизация</p>
             <div className="settings-group">
               <div className="setting-row">
                 <div className="setting-icon"><ShieldCheck size={17} /></div>
                 <div>
                   <b>Локальное сохранение</b>
-                  <small>На этом устройстве · автосохранение после каждого действия</small>
+                  <small>Автосохранение после каждого действия</small>
                 </div>
                 <span className="status-dot status-active" title="Активно" />
               </div>
@@ -1367,13 +1481,11 @@ export default function App() {
                   <div>
                     <b>Облачная синхронизация</b>
                     <small>
-                      {!user
-                        ? 'Подключение к облаку…'
-                        : user.isAnonymous
-                          ? 'Анонимный аккаунт · только это устройство'
-                          : `Google · ${user.email || 'аккаунт'}`}
+                      {!isRegistered
+                        ? 'Только на этом устройстве'
+                        : `Через аккаунт ${user?.email || ''}`}
                     </small>
-                    {user && (
+                    {isRegistered && (
                       <small className="sync-time">
                         {isSyncing
                           ? 'Синхронизация…'
@@ -1384,7 +1496,7 @@ export default function App() {
                     )}
                     {syncError && <small className="sync-error">Ошибка: {syncError}</small>}
                   </div>
-                  <span className={`status-dot ${isSyncing ? 'status-pending' : user ? (user.isAnonymous ? 'status-pending' : 'status-active') : ''}`} />
+                  <span className={`status-dot ${isSyncing ? 'status-pending' : isRegistered ? 'status-active' : ''}`} />
                 </div>
               ) : (
                 <div className="setting-row">
@@ -1398,31 +1510,13 @@ export default function App() {
               )}
             </div>
 
-            {user && (
-              <p className="sync-hint">
-                Изменения отправляются в облако автоматически через 2 секунды после любого действия.
-              </p>
-            )}
-
-            {user && !user.isAnonymous && (
-              <button className="button button-secondary full-width" onClick={forceSync} disabled={isSyncing} style={{ marginTop: 8 }}>
-                <Cloud size={17} /> {isSyncing ? 'Синхронизация…' : 'Синхронизировать сейчас'}
-              </button>
-            )}
-
-            {user && user.isAnonymous && (
-              <div className="sync-warning">
-                <p>Прогресс сохранён только на этом устройстве. Если удалить приложение — данные не восстановятся.</p>
-                <button className="button button-primary full-width" onClick={handleLinkGoogle}>
-                  <Cloud size={17} /> Сохранить прогресс навсегда
+            {isRegistered && (
+              <>
+                <p className="sync-hint">Изменения отправляются в облако через 2 секунды после действия.</p>
+                <button className="button button-secondary full-width" onClick={forceSync} disabled={isSyncing} style={{ marginTop: 8 }}>
+                  <Cloud size={17} /> {isSyncing ? 'Синхронизация…' : 'Синхронизировать сейчас'}
                 </button>
-              </div>
-            )}
-
-            {user && !user.isAnonymous && (
-              <button className="button button-secondary full-width" onClick={handleLogout} style={{ marginTop: 8 }}>
-                Выйти из аккаунта
-              </button>
+              </>
             )}
           </div>
 
@@ -1431,17 +1525,17 @@ export default function App() {
             <div className="settings-group">
               <button className="settings-action" onClick={exportData}>
                 <FileDown size={17} />
-                <span><b>Экспортировать JSON</b><small>Независимая копия всех данных.</small></span>
+                <span><b>Экспортировать JSON</b><small>Копия всех данных на диск</small></span>
               </button>
               <label className="settings-action">
                 <Save size={17} />
-                <span><b>Импортировать JSON</b><small>Восстановить из резервной копии.</small></span>
+                <span><b>Импортировать JSON</b><small>Восстановить из файла</small></span>
                 <input type="file" accept=".json,application/json" hidden onChange={e => importData(e.target.files?.[0])} />
               </label>
             </div>
           </div>
 
-          <div className="notice">Облачная синхронизация привязана к устройству. Чтобы переносить данные между телефонами, привяжите Google-аккаунт (кнопка выше). Экспорт JSON — независимая копия на диск.</div>
+          <div className="notice">Резервная копия JSON — независимая страховка. Облако синхронизирует автоматически, но локальный файл можно открыть и восстановить без интернета.</div>
         </section>}
       </main>
 
@@ -1560,6 +1654,89 @@ export default function App() {
             </div>
             <ProgressChart points={getExerciseProgress(graphExercise.id)} />
             <p className="chart-caption">Объём = вес × повторы за все выполненные подходы. Последние 12 тренировок.</p>
+          </section>
+        </div>
+      )}
+
+      {emailAuthOpen && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget && !emailAuthLoading) setEmailAuthOpen(false); }}>
+          <section className="picker-modal" role="dialog" aria-modal="true" aria-labelledby="email-auth-title">
+            <div className="modal-head">
+              <div>
+                <p className="eyebrow">АККАУНТ</p>
+                <h2 id="email-auth-title">
+                  {emailAuthMode === 'signup' ? 'Создать аккаунт' : emailAuthMode === 'signin' ? 'Войти' : 'Сбросить пароль'}
+                </h2>
+              </div>
+              <button className="icon-button" onClick={() => setEmailAuthOpen(false)} aria-label="Закрыть" disabled={emailAuthLoading}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <p className="picker-hint">
+              {emailAuthMode === 'signup' && 'Привяжем email к текущему прогрессу. Дальше сможешь войти с другого устройства или после переустановки.'}
+              {emailAuthMode === 'signin' && 'Введи email и пароль. Текущие данные на этом устройстве заменятся данными из облака.'}
+              {emailAuthMode === 'reset' && 'Отправим ссылку для сброса пароля на email.'}
+            </p>
+
+            <input
+              className="field"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              placeholder="Email"
+              value={emailValue}
+              onChange={e => setEmailValue(e.target.value)}
+              autoFocus
+              disabled={emailAuthLoading}
+            />
+
+            {emailAuthMode !== 'reset' && (
+              <input
+                className="field"
+                type="password"
+                autoComplete={emailAuthMode === 'signup' ? 'new-password' : 'current-password'}
+                placeholder={emailAuthMode === 'signup' ? 'Пароль (минимум 6 символов)' : 'Пароль'}
+                value={passwordValue}
+                onChange={e => setPasswordValue(e.target.value)}
+                disabled={emailAuthLoading}
+              />
+            )}
+
+            {emailAuthError && <div className="email-auth-error">{emailAuthError}</div>}
+
+            <button
+              className="button button-primary full-width"
+              onClick={handleEmailAuth}
+              disabled={emailAuthLoading || !emailValue.trim() || (emailAuthMode !== 'reset' && !passwordValue)}
+            >
+              {emailAuthLoading
+                ? 'Подожди…'
+                : emailAuthMode === 'signup' ? 'Создать аккаунт'
+                : emailAuthMode === 'signin' ? 'Войти'
+                : 'Отправить письмо'}
+            </button>
+
+            {emailAuthMode === 'signup' && (
+              <button className="text-link" onClick={() => openEmailAuth('signin')}>
+                Уже есть аккаунт? Войти
+              </button>
+            )}
+            {emailAuthMode === 'signin' && (
+              <>
+                <button className="text-link" onClick={() => openEmailAuth('signup')}>
+                  Нет аккаунта? Создать
+                </button>
+                <button className="text-link" onClick={() => openEmailAuth('reset')}>
+                  Забыли пароль?
+                </button>
+              </>
+            )}
+            {emailAuthMode === 'reset' && (
+              <button className="text-link" onClick={() => openEmailAuth('signin')}>
+                ← Назад к входу
+              </button>
+            )}
           </section>
         </div>
       )}
