@@ -190,8 +190,7 @@ export default function App() {
   }, []);
 
   const { lastSyncedAt, isSyncing, syncError, forceSync } = useCloudSync(user, state, setState);
-  const { lastSyncedAt, isSyncing, syncError, forceSync } = useCloudSync(user, state, setState);
-
+ 
   useEffect(() => {
     if (!state.activeWorkout) return;
     setNow(Date.now());
