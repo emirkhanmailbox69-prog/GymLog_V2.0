@@ -918,7 +918,7 @@ export default function App() {
     <div className="app-shell">
             <header className="topbar">
         <button className="brand" onClick={() => setTab('home')} aria-label="На главную">
-          <img src="/logo.png" alt="GymLog" className="brand-mark-img" />
+          <img src={`${import.meta.env.BASE_URL}logo.png`} alt="GymLog" className="brand-mark-img" />
           <span><b>GYMLOG</b><small>TRAINING JOURNAL</small></span>
         </button>
           <button className="avatar" onClick={() => setTab('profile')} aria-label="Открыть профиль">
