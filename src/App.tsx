@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Activity, Award, BarChart3, BookOpen, Calendar, Camera, Check, ChevronDown, ChevronLeft, ChevronRight,
-  ChevronUp, CircleUserRound, Cloud, Clock3, Copy, Dumbbell, FileDown, History, Home, MessageSquare,
+  ChevronUp, CircleUserRound, Cloud, Clock3, Copy, Dumbbell, FileDown, Flame, History, Home, MessageSquare,
   Pencil, Plus, RefreshCw, Save, ShieldCheck, Star, Target, Trash2, TrendingUp, Trophy, X, Zap
 } from 'lucide-react';
 import type { User } from 'firebase/auth';
@@ -61,6 +61,17 @@ const formatSyncTime = (ts: number | null): string => {
 
 const MONTH_NAMES = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
+// Хелперы для дат
+const getStartOfWeek = (d: Date) => {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1); // Пн - начало
+  date.setDate(diff);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+};
+const getStartOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1).getTime();
 const formatMonthYear = (d: Date) => `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
 const dayKeyFromDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const dayKeyFromTs = (ts: number) => dayKeyFromDate(new Date(ts));
@@ -85,21 +96,25 @@ const MUSCLE_MAP: Record<string, string> = {
   'Корпус': 'Пресс и кор'
 };
 const normalizeMuscle = (m: string) => MUSCLE_MAP[m] || m;
+
 const RING_METRICS: { id: RingMetric; label: string; shortLabel: string; unit: string; defaultGoal: number }[] = [
   { id: 'workouts_week', label: 'Тренировки за неделю', shortLabel: 'Тренировки', unit: 'трен.', defaultGoal: 4 },
   { id: 'sets_week', label: 'Подходы за неделю', shortLabel: 'Подходы', unit: 'подх.', defaultGoal: 50 },
   { id: 'volume_week', label: 'Объём за неделю', shortLabel: 'Объём', unit: 'кг', defaultGoal: 10000 },
   { id: 'minutes_week', label: 'Время за неделю', shortLabel: 'Время', unit: 'мин', defaultGoal: 180 },
   { id: 'xp_week', label: 'XP за неделю', shortLabel: 'XP', unit: 'XP', defaultGoal: 300 },
-  { id: 'workouts_30d', label: 'Тренировки за 30 дней', shortLabel: 'Тренировки', unit: 'трен.', defaultGoal: 12 },
-  { id: 'sets_30d', label: 'Подходы за 30 дней', shortLabel: 'Подходы', unit: 'подх.', defaultGoal: 150 },
-  { id: 'volume_30d', label: 'Объём за 30 дней', shortLabel: 'Объём', unit: 'кг', defaultGoal: 40000 },
+  { id: 'workouts_month', label: 'Тренировки за месяц', shortLabel: 'Тренировки', unit: 'трен.', defaultGoal: 12 },
+  { id: 'sets_month', label: 'Подходы за месяц', shortLabel: 'Подходы', unit: 'подх.', defaultGoal: 150 },
+  { id: 'volume_month', label: 'Объём за месяц', shortLabel: 'Объём', unit: 'кг', defaultGoal: 40000 },
   { id: 'streak', label: 'Серия дней подряд', shortLabel: 'Серия', unit: 'дн.', defaultGoal: 7 }
 ];
 
 const getRingMetricInfo = (id: RingMetric) => RING_METRICS.find(m => m.id === id) || RING_METRICS[0];
 const DEFAULT_EXERCISE_IDS = new Set(starterExercises.map(e => e.id));
 const isDefaultExercise = (id: string) => DEFAULT_EXERCISE_IDS.has(id);
+
+// Валидная тренировка — от 30 минут
+const isValidWorkout = (w: Workout) => (w.endedAt - w.startedAt) >= 30 * 60 * 1000;
 
 export default function App() {
   const [state, setState] = useState<AppState>(() => ensureState(loadState()));
@@ -138,11 +153,9 @@ export default function App() {
   const [programCustomExCategory, setProgramCustomExCategory] = useState(DEFAULT_CATEGORIES[0]);
   const [showProgramCustomEx, setShowProgramCustomEx] = useState(false);
 
-  // Библиотека → добавить своё
+  // Библиотека
   const [exerciseName, setExerciseName] = useState('');
   const [exerciseMuscle, setExerciseMuscle] = useState(DEFAULT_CATEGORIES[0]);
-
-  // Редактирование упражнения
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
 
   // Email/Password
@@ -169,25 +182,21 @@ export default function App() {
     if (!saveState(state)) notify('Не удалось сохранить локально. Экспортируй резервную копию.');
   }, [state]);
 
-    useEffect(() => {
+  useEffect(() => {
     let authResolved = false;
     const unsubscribe = subscribeToAuth((u) => {
       if (!authResolved) {
         authResolved = true;
-        if (!u) {
-          ensureAnonymousAuth().catch(err => console.error('Anonymous auth error:', err));
-        }
+        if (!u) ensureAnonymousAuth().catch(err => console.error('Auth error:', err));
       }
       setUser(u);
     });
     return unsubscribe;
   }, []);
 
-    useEffect(() => {
+  useEffect(() => {
     if (navigator.storage && navigator.storage.persist) {
-      navigator.storage.persist().catch(() => {
-        /* не критично, просто игнорируем */
-      });
+      navigator.storage.persist().catch(() => {});
     }
   }, []);
 
@@ -213,149 +222,57 @@ export default function App() {
     window.setTimeout(() => setToast(''), 2600);
   }
 
-  function ensureCategoryRegistered(cat: string) {
-    const trimmed = cat.trim();
-    if (!trimmed) return;
-    setState(s => {
-      const list = s.customCategories ?? [];
-      if (list.includes(trimmed)) return s;
-      if (DEFAULT_CATEGORIES.includes(trimmed)) return s;
-      return { ...s, customCategories: [...list, trimmed] };
-    });
-  }
-
-  async function handleLogout() {
-    try {
-      await logOut();
-      await ensureAnonymousAuth();
-      notify('Вы вышли из аккаунта.');
-    } catch {
-      notify('Ошибка выхода.');
-    }
-  }
-
-  function openEmailAuth(mode: 'signup' | 'signin' | 'reset') {
-    setEmailAuthMode(mode);
-    setEmailValue(user?.email || '');
-    setPasswordValue('');
-    setEmailAuthError(null);
-    setEmailAuthOpen(true);
-  }
-
-  async function handleEmailAuth() {
-    const email = emailValue.trim().toLowerCase();
-    const password = passwordValue;
-    setEmailAuthError(null);
-
-    if (!email || !email.includes('@')) {
-      setEmailAuthError('Введи корректный email');
-      return;
-    }
-
-    if (emailAuthMode === 'reset') {
-      setEmailAuthLoading(true);
-      try {
-        await resetPassword(email);
-        setEmailAuthOpen(false);
-        notify(`Письмо для сброса пароля отправлено на ${email}`);
-      } catch (err: unknown) {
-        const code = (err as { code?: string })?.code || '';
-        if (code === 'auth/user-not-found') setEmailAuthError('Аккаунт с таким email не найден');
-        else if (code === 'auth/invalid-email') setEmailAuthError('Некорректный email');
-        else setEmailAuthError('Не удалось отправить письмо');
-      } finally {
-        setEmailAuthLoading(false);
-      }
-      return;
-    }
-
-    if (password.length < 6) {
-      setEmailAuthError('Пароль минимум 6 символов');
-      return;
-    }
-
-    setEmailAuthLoading(true);
-    try {
-      if (emailAuthMode === 'signup') {
-        try {
-          const linkedUser = await linkWithEmail(email, password);
-          setUser(linkedUser);
-          setEmailAuthOpen(false);
-          setEmailValue('');
-          setPasswordValue('');
-          notify(`Аккаунт создан: ${email}. Данные синхронизируются.`);
-        } catch (err: unknown) {
-          const code = (err as { code?: string })?.code || '';
-          if (code === 'auth/email-already-in-use') {
-            setEmailAuthError('Этот email уже используется. Нажми «Войти» снизу.');
-          } else if (code === 'auth/weak-password') {
-            setEmailAuthError('Пароль слишком простой (минимум 6 символов)');
-          } else if (code === 'auth/credential-already-in-use') {
-            setEmailAuthError('Email уже привязан к другому аккаунту. Нажми «Войти».');
-          } else {
-            setEmailAuthError(`Не удалось: ${code || 'ошибка'}`);
-          }
-        }
-      } else {
-        try {
-          const signedUser = await signInWithEmail(email, password);
-          setUser(signedUser);
-          setEmailAuthOpen(false);
-          setEmailValue('');
-          setPasswordValue('');
-          notify(`Вы вошли: ${email}`);
-        } catch (err: unknown) {
-          const code = (err as { code?: string })?.code || '';
-          if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
-            setEmailAuthError('Неверный пароль');
-          } else if (code === 'auth/user-not-found') {
-            setEmailAuthError('Аккаунт не найден. Нажми «Нет аккаунта? Создать».');
-          } else if (code === 'auth/too-many-requests') {
-            setEmailAuthError('Слишком много попыток. Подожди пару минут.');
-          } else if (code === 'auth/invalid-email') {
-            setEmailAuthError('Некорректный email');
-          } else {
-            setEmailAuthError(`Не удалось: ${code || 'ошибка'}`);
-          }
-        }
-      }
-    } finally {
-      setEmailAuthLoading(false);
-    }
-  }
-
+  // === Вычисление метрик и колец ===
   const xp = totalXp(state.workouts);
   const level = levelFor(xp);
   const currentWorkout = state.activeWorkout;
-  const weeklyWorkouts = state.workouts.filter(w => Date.now() - w.endedAt < 7 * 86400000);
-  const weeklySets = weeklyWorkouts.reduce((n, w) => n + setCount(w), 0);
+
+  const currentWeekStart = getStartOfWeek(new Date());
+  const currentMonthStart = getStartOfMonth(new Date());
+
+  const currentWeekWorkouts = state.workouts.filter(w => w.endedAt >= currentWeekStart);
+  const currentMonthWorkouts = state.workouts.filter(w => w.endedAt >= currentMonthStart);
+
+  const validWeekWorkouts = currentWeekWorkouts.filter(isValidWorkout);
+  const validMonthWorkouts = currentMonthWorkouts.filter(isValidWorkout);
+
+  const weeklySets = validWeekWorkouts.reduce((n, w) => n + setCount(w), 0);
+  const weeklyVolume = validWeekWorkouts.reduce((n, w) => n + volume(w), 0);
+  const weeklyMinutes = validWeekWorkouts.reduce((n, w) => n + durationMinutes(w.startedAt, w.endedAt), 0);
+  const weeklyXp = validWeekWorkouts.reduce((n, w) => n + w.earnedXp, 0);
+
+  const monthlySets = validMonthWorkouts.reduce((n, w) => n + setCount(w), 0);
+  const monthlyVolume = validMonthWorkouts.reduce((n, w) => n + volume(w), 0);
+
   const streak = (() => {
-    if (!state.workouts.length) return 0;
-    const days = new Set(state.workouts.map(w => new Date(w.endedAt).toDateString()));
+    // Учитываем только валидные тренировки (>= 30 мин) и уникальные дни
+    const validDays = new Set(state.workouts.filter(isValidWorkout).map(w => new Date(w.endedAt).toDateString()));
+    if (validDays.size === 0) return 0;
+    
     let s = 0;
     const d = new Date();
-    while (days.has(d.toDateString())) { s++; d.setDate(d.getDate() - 1); }
+    // Проверяем, была ли тренировка сегодня. Если нет, начинаем проверку со вчера (стрик еще жив до конца дня)
+    if (!validDays.has(d.toDateString())) {
+      d.setDate(d.getDate() - 1);
+    }
+    
+    while (validDays.has(d.toDateString())) {
+      s++;
+      d.setDate(d.getDate() - 1);
+    }
     return s;
   })();
 
-    const weeklyVolume = weeklyWorkouts.reduce((n, w) => n + volume(w), 0);
-  const weeklyMinutes = weeklyWorkouts.reduce((n, w) => n + durationMinutes(w.startedAt, w.endedAt), 0);
-  const weeklyXp = weeklyWorkouts.reduce((n, w) => n + w.earnedXp, 0);
-
-  const last30dWorkouts = state.workouts.filter(w => Date.now() - w.endedAt < 30 * 86400000);
-  const last30dSets = last30dWorkouts.reduce((n, w) => n + setCount(w), 0);
-  const last30dVolume = last30dWorkouts.reduce((n, w) => n + volume(w), 0);
-
   function getRingMetricValue(metric: RingMetric): number {
     switch (metric) {
-      case 'workouts_week': return weeklyWorkouts.length;
+      case 'workouts_week': return validWeekWorkouts.length;
       case 'sets_week': return weeklySets;
       case 'volume_week': return weeklyVolume;
       case 'minutes_week': return weeklyMinutes;
       case 'xp_week': return weeklyXp;
-      case 'workouts_30d': return last30dWorkouts.length;
-      case 'sets_30d': return last30dSets;
-      case 'volume_30d': return last30dVolume;
+      case 'workouts_month': return validMonthWorkouts.length;
+      case 'sets_month': return monthlySets;
+      case 'volume_month': return monthlyVolume;
       case 'streak': return streak;
     }
   }
@@ -364,20 +281,14 @@ export default function App() {
     const info = getRingMetricInfo(metric);
     setState(s => ({
       ...s,
-      settings: {
-        ...s.settings,
-        [which]: { metric, goal: info.defaultGoal }
-      }
+      settings: { ...s.settings, [which]: { metric, goal: info.defaultGoal } }
     }));
   }
 
   function updateRingGoal(which: 'ring1' | 'ring2', goal: number) {
     setState(s => ({
       ...s,
-      settings: {
-        ...s.settings,
-        [which]: { ...s.settings[which], goal: Math.max(1, goal || 1) }
-      }
+      settings: { ...s.settings, [which]: { ...s.settings[which], goal: Math.max(1, goal || 1) } }
     }));
   }
 
@@ -386,32 +297,48 @@ export default function App() {
   const ring1Value = getRingMetricValue(state.settings.ring1.metric);
   const ring2Value = getRingMetricValue(state.settings.ring2.metric);
 
-  const filteredExercises = useMemo(() => state.exercises.filter(e =>
-    `${e.name} ${e.muscle} ${e.equipment}`.toLocaleLowerCase('ru-RU').includes(pickerQuery.toLocaleLowerCase('ru-RU'))
-  ), [state.exercises, pickerQuery]);
+  const isRing1Closed = ring1Value >= state.settings.ring1.goal;
+  const isRing2Closed = ring2Value >= state.settings.ring2.goal;
 
-  const filteredProgramExercises = useMemo(() => {
-    const q = programSearch.toLowerCase().trim();
-    if (!q) return state.exercises;
-    return state.exercises.filter(e =>
-      `${e.name} ${e.muscle} ${e.equipment}`.toLowerCase().includes(q)
-    );
-  }, [state.exercises, programSearch]);
+  // === Достижения (Геймификация 2.0) ===
+  // Проверяем, какие ачивки уже открыты, и если есть новые — сохраняем их в state.
+  useEffect(() => {
+    const newAch: Record<string, number> = {};
+    let hasNew = false;
+    const ts = Date.now();
 
-  const groupedExercises = useMemo(() => {
-    const groups: Record<string, Exercise[]> = {};
-    for (const e of state.exercises) {
-      const cat = normalizeMuscle(e.muscle) || 'Без категории';
-      if (!groups[cat]) groups[cat] = [];
-      groups[cat].push(e);
+    // Хелпер для проверки
+    const check = (id: string, condition: boolean) => {
+      if (condition && !state.unlockedAchievements[id]) {
+        newAch[id] = ts;
+        hasNew = true;
+      }
+    };
+
+    const totalVol = state.workouts.reduce((n, w) => n + volume(w), 0);
+    const totalSets = state.workouts.reduce((n, w) => n + setCount(w), 0);
+    
+    // Идеальная неделя: минимум 4 валидные тренировки на этой неделе
+    const isPerfectWeek = validWeekWorkouts.length >= 4; 
+    
+    check('first', state.workouts.length >= 1);
+    check('five', state.workouts.length >= 5);
+    check('ten', state.workouts.length >= 10);
+    check('streak3', streak >= 3);
+    check('streak7', streak >= 7);
+    check('perfect_week', isPerfectWeek);
+    check('marathon', validMonthWorkouts.length >= 10);
+    check('vol10k', totalVol >= 10000);
+    check('vol50k', totalVol >= 50000);
+    check('sets100', totalSets >= 100);
+    check('iron_streak', streak >= 5);
+
+    if (hasNew) {
+      setState(s => ({ ...s, unlockedAchievements: { ...s.unlockedAchievements, ...newAch } }));
     }
-    for (const cat in groups) {
-      groups[cat].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-    }
-    return groups;
-  }, [state.exercises]);
+  }, [state.workouts, streak, validWeekWorkouts.length, validMonthWorkouts.length, state.unlockedAchievements]);
 
-  // === Календарь ===
+  // === Календарь (Золотые недели) ===
   const workoutsByDay = useMemo(() => {
     const map: Record<string, Workout[]> = {};
     for (const w of state.workouts) {
@@ -428,6 +355,47 @@ export default function App() {
   );
 
   const todayKey = dayKeyFromDate(new Date());
+
+  // Вычисляем закрытые недели
+  const closedWeekStarts = useMemo(() => {
+    const weeks: Record<number, Workout[]> = {};
+    for (const w of state.workouts) {
+      if (!isValidWorkout(w)) continue;
+      const ws = getStartOfWeek(new Date(w.endedAt));
+      if (!weeks[ws]) weeks[ws] = [];
+      weeks[ws].push(w);
+    }
+    const closed = new Set<number>();
+    for (const [ws, workouts] of Object.entries(weeks)) {
+      if (workouts.length >= 4) closed.add(Number(ws)); // 4 тренировки = золотая неделя
+    }
+    return closed;
+  }, [state.workouts]);
+
+  const isIdealMonth = useMemo(() => {
+    const year = calendarDate.getFullYear();
+    const month = calendarDate.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    
+    // Не показываем идеальный месяц, если он еще не закончился (кроме тестов)
+    // if (Date.now() < lastDay.getTime()) return false;
+
+    let current = getStartOfWeek(firstDay);
+    const end = lastDay.getTime();
+    let weekCount = 0;
+    let closedCount = 0;
+
+    while (current <= end) {
+      // Проверяем только полные недели, которые начались в этом месяце
+      if (new Date(current).getMonth() === month) {
+        weekCount++;
+        if (!closedWeekStarts.has(current)) return false;
+      }
+      current = current + 7 * 86400000;
+    }
+    return weekCount > 0;
+  }, [calendarDate, closedWeekStarts]);
 
   const monthWorkouts = useMemo(() => {
     return state.workouts.filter(w => {
@@ -455,56 +423,30 @@ export default function App() {
     return stats;
   }, [state.workouts, state.exercises]);
 
-  const muscleStatsSorted = useMemo(() => {
-    return Object.entries(muscleStats30d)
-      .filter(([, v]) => v > 0)
-      .sort((a, b) => b[1] - a[1]);
-  }, [muscleStats30d]);
-
+  const muscleStatsSorted = useMemo(() => Object.entries(muscleStats30d).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]), [muscleStats30d]);
   const maxMuscleValue = Math.max(1, ...muscleStatsSorted.map(([, v]) => v));
 
-  function goToPrevMonth() {
-    setCalendarDate(d => new Date(d.getFullYear(), d.getMonth() - 1, 1));
-  }
-  function goToNextMonth() {
-    setCalendarDate(d => new Date(d.getFullYear(), d.getMonth() + 1, 1));
-  }
-  function selectDay(key: string) {
-    setSelectedDay(prev => prev === key ? null : key);
-  }
+  function goToPrevMonth() { setCalendarDate(d => new Date(d.getFullYear(), d.getMonth() - 1, 1)); }
+  function goToNextMonth() { setCalendarDate(d => new Date(d.getFullYear(), d.getMonth() + 1, 1)); }
+  function selectDay(key: string) { setSelectedDay(prev => prev === key ? null : key); }
   function openCalendar() {
     setHistoryView('calendar');
-    if (!selectedDay) {
-      setCalendarDate(new Date());
-      setSelectedDay(todayKey);
-    }
+    if (!selectedDay) { setCalendarDate(new Date()); setSelectedDay(todayKey); }
   }
 
+  // ... (функции patchActive, cloneExercise, startWorkout и т.д. остались прежними)
   function patchActive(updater: (active: ActiveWorkout) => ActiveWorkout) {
     setState(s => s.activeWorkout ? { ...s, activeWorkout: updater(s.activeWorkout) } : s);
   }
 
   function cloneExercise(source: WorkoutExercise): WorkoutExercise {
     const doneSets = source.sets.filter(s => s.done && (s.weight || s.reps));
-    const sets = doneSets.length > 0
-      ? doneSets.map(s => ({ id: uid(), weight: s.weight, reps: s.reps, done: false }))
-      : [emptySet(), emptySet(), emptySet()];
-    return {
-      id: uid(),
-      exerciseId: source.exerciseId,
-      name: source.name,
-      sets,
-      collapsed: false
-    };
+    const sets = doneSets.length > 0 ? doneSets.map(s => ({ id: uid(), weight: s.weight, reps: s.reps, done: false })) : [emptySet(), emptySet(), emptySet()];
+    return { id: uid(), exerciseId: source.exerciseId, name: source.name, sets, collapsed: false };
   }
 
   function startFromWorkout(source: Workout) {
-    const newWorkout: ActiveWorkout = {
-      id: uid(),
-      name: source.name,
-      startedAt: Date.now(),
-      exercises: source.exercises.map(cloneExercise)
-    };
+    const newWorkout: ActiveWorkout = { id: uid(), name: source.name, startedAt: Date.now(), exercises: source.exercises.map(cloneExercise) };
     setState(s => ({ ...s, activeWorkout: newWorkout }));
     setTab('workout');
     notify(`Скопировано из «${source.name}»`);
@@ -512,10 +454,7 @@ export default function App() {
 
   function startWorkout(program?: Program) {
     const chosen = program ? state.exercises.filter(e => program.exerciseIds.includes(e.id)) : [];
-    setState(s => ({ ...s, activeWorkout: {
-      id: uid(), name: program?.name ?? 'Силовая тренировка', startedAt: Date.now(),
-      exercises: chosen.map(makeWorkoutExercise)
-    }}));
+    setState(s => ({ ...s, activeWorkout: { id: uid(), name: program?.name ?? 'Силовая тренировка', startedAt: Date.now(), exercises: chosen.map(makeWorkoutExercise) } }));
     setTab('workout');
     notify(program ? `Начата программа «${program.name}»` : 'Тренировка начата');
   }
@@ -527,9 +466,7 @@ export default function App() {
   }
 
   function updateSet(exerciseId: string, setId: string, patch: Partial<SetEntry>) {
-    patchActive(a => ({ ...a, exercises: a.exercises.map(e => e.id !== exerciseId ? e : {
-      ...e, sets: e.sets.map(s => s.id === setId ? { ...s, ...patch } : s)
-    }) }));
+    patchActive(a => ({ ...a, exercises: a.exercises.map(e => e.id !== exerciseId ? e : { ...e, sets: e.sets.map(s => s.id === setId ? { ...s, ...patch } : s) }) }));
   }
 
   function toggleNote(exerciseId: string, setId: string) {
@@ -537,21 +474,10 @@ export default function App() {
     setOpenNotes(prev => ({ ...prev, [key]: !prev[key] }));
   }
 
-        function getExerciseStats(exerciseId: string): {
-    points: { date: number; value: number }[];
-    bestWeight: number;
-    bestReps: number;
-    bestDate: number | null;
-    best1RM: number;
-    totalWorkouts: number;
-  } {
+  function getExerciseStats(exerciseId: string) {
     const sorted = [...state.workouts].reverse();
     const points: { date: number; value: number }[] = [];
-    let bestWeight = 0;
-    let bestReps = 0;
-    let bestDate: number | null = null;
-    let best1RM = 0;
-    let totalWorkouts = 0;
+    let bestWeight = 0, bestReps = 0, bestDate: number | null = null, best1RM = 0, totalWorkouts = 0;
 
     for (const w of sorted) {
       const ex = w.exercises.find(e => e.exerciseId === exerciseId);
@@ -566,37 +492,19 @@ export default function App() {
         const rp = Number(s.reps) || 0;
         if (wt > maxWeightInWorkout) maxWeightInWorkout = wt;
         if (wt <= 0 || rp <= 0) continue;
-        if (wt > bestWeight || (wt === bestWeight && rp > bestReps)) {
-          bestWeight = wt;
-          bestReps = rp;
-          bestDate = w.endedAt;
-        }
+        if (wt > bestWeight || (wt === bestWeight && rp > bestReps)) { bestWeight = wt; bestReps = rp; bestDate = w.endedAt; }
         const epley = wt * (1 + rp / 30);
         if (epley > best1RM) best1RM = epley;
       }
-
-      if (maxWeightInWorkout > 0) {
-        points.push({ date: w.endedAt, value: maxWeightInWorkout });
-      }
+      if (maxWeightInWorkout > 0) points.push({ date: w.endedAt, value: maxWeightInWorkout });
     }
-
-    return {
-      points: points.slice(-12),
-      bestWeight,
-      bestReps,
-      bestDate,
-      best1RM: Math.round(best1RM * 10) / 10,
-      totalWorkouts
-    };
+    return { points: points.slice(-12), bestWeight, bestReps, bestDate, best1RM: Math.round(best1RM * 10) / 10, totalWorkouts };
   }
 
   function finishWorkout() {
     if (!currentWorkout || finishing) return;
     const earnedXp = xpFor(currentWorkout);
-    if (earnedXp === 0) {
-      notify('Отметь хотя бы один выполненный подход — пустая тренировка не даёт XP.');
-      return;
-    }
+    if (earnedXp === 0) { notify('Отметь хотя бы один подход.'); return; }
     setFinishing(true);
     window.setTimeout(() => {
       const completed: Workout = { ...currentWorkout, endedAt: Date.now(), earnedXp };
@@ -610,56 +518,34 @@ export default function App() {
   }
 
   function deleteWorkout(id: string) {
-    if (!window.confirm('Удалить тренировку? Статистика и XP будут пересчитаны.')) return;
+    if (!window.confirm('Удалить тренировку?')) return;
     setState(s => ({ ...s, workouts: s.workouts.filter(w => w.id !== id) }));
-    notify('Тренировка удалена. Прогресс пересчитан.');
+    notify('Тренировка удалена.');
   }
 
   function clearHistory() {
-    if (!window.confirm('Удалить ВСЮ историю тренировок? Это действие нельзя отменить.')) return;
-    if (!window.confirm('Точно? Все тренировки, XP и статистика будут потеряны навсегда.\n\nСовет: перед удалением сделайте экспорт JSON в профиле.')) return;
-    setState(s => ({ ...s, workouts: [] }));
-    notify('История очищена. XP и статистика пересчитаны.');
+    if (!window.confirm('Удалить ВСЮ историю? Это нельзя отменить.')) return;
+    if (!window.confirm('Точно? Статистика и достижения будут потеряны.')) return;
+    setState(s => ({ ...s, workouts: [], unlockedAchievements: {} }));
+    notify('История очищена.');
   }
 
   function cancelProgramEdit() {
-    setEditingProgramId(null);
-    setProgramName('');
-    setProgramNote('');
-    setProgramExerciseIds([]);
-    setProgramSearch('');
-    setProgramCustomExName('');
-    setProgramCustomExCategory(DEFAULT_CATEGORIES[0]);
-    setShowProgramCustomEx(false);
-    setShowProgramBuilder(false);
+    setEditingProgramId(null); setProgramName(''); setProgramNote(''); setProgramExerciseIds([]); setProgramSearch('');
+    setProgramCustomExName(''); setProgramCustomExCategory(DEFAULT_CATEGORIES[0]); setShowProgramCustomEx(false); setShowProgramBuilder(false);
   }
 
   function startEditProgram(p: Program) {
-    setEditingProgramId(p.id);
-    setProgramName(p.name);
-    setProgramNote(p.note || '');
-    setProgramExerciseIds(p.exerciseIds);
-    setProgramSearch('');
-    setShowProgramCustomEx(false);
-    setShowProgramBuilder(true);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setEditingProgramId(p.id); setProgramName(p.name); setProgramNote(p.note || ''); setProgramExerciseIds(p.exerciseIds);
+    setProgramSearch(''); setShowProgramCustomEx(false); setShowProgramBuilder(true); window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function addProgram() {
     const name = programName.trim();
-    if (!name || programExerciseIds.length === 0) {
-      notify('Укажи название и добавь хотя бы одно упражнение.');
-      return;
-    }
+    if (!name || programExerciseIds.length === 0) { notify('Укажи название и добавь упражнения.'); return; }
     const note = programNote.trim() || undefined;
     if (editingProgramId) {
-      setState(s => ({
-        ...s,
-        programs: s.programs.map(p => p.id === editingProgramId
-          ? { ...p, name, note, exerciseIds: programExerciseIds }
-          : p
-        )
-      }));
+      setState(s => ({ ...s, programs: s.programs.map(p => p.id === editingProgramId ? { ...p, name, note, exerciseIds: programExerciseIds } : p) }));
       notify('Программа обновлена.');
     } else {
       const program: Program = { id: uid(), name, note, exerciseIds: programExerciseIds, createdAt: Date.now() };
@@ -671,46 +557,35 @@ export default function App() {
 
   function addCustomExerciseFromProgram() {
     const name = programCustomExName.trim();
-    if (!name) { notify('Введи название упражнения.'); return; }
-    if (state.exercises.some(e => e.name.toLowerCase() === name.toLowerCase())) {
-      notify('Такое упражнение уже есть в библиотеке.');
-      return;
-    }
+    if (!name) { notify('Введи название.'); return; }
+    if (state.exercises.some(e => e.name.toLowerCase() === name.toLowerCase())) { notify('Уже есть.'); return; }
     const category = programCustomExCategory.trim();
     const exercise: Exercise = { id: uid(), name, muscle: category, equipment: 'Пользовательское' };
     setState(s => ({ ...s, exercises: [...s.exercises, exercise] }));
     if (category) ensureCategoryRegistered(category);
     setProgramExerciseIds(ids => [...ids, exercise.id]);
-    setProgramCustomExName('');
-    setProgramCustomExCategory(DEFAULT_CATEGORIES[0]);
-    setShowProgramCustomEx(false);
-    notify('Упражнение добавлено и выбрано.');
+    setProgramCustomExName(''); setProgramCustomExCategory(DEFAULT_CATEGORIES[0]); setShowProgramCustomEx(false);
+    notify('Добавлено.');
   }
 
   function addCustomExercise() {
     const name = exerciseName.trim();
-    if (!name) { notify('Введи название упражнения.'); return; }
-    if (state.exercises.some(e => e.name.toLowerCase() === name.toLowerCase())) {
-      notify('Такое упражнение уже есть в библиотеке.');
-      return;
-    }
+    if (!name) { notify('Введи название.'); return; }
+    if (state.exercises.some(e => e.name.toLowerCase() === name.toLowerCase())) { notify('Уже есть.'); return; }
     const category = exerciseMuscle.trim();
     const exercise: Exercise = { id: uid(), name, muscle: category, equipment: 'Пользовательское' };
     setState(s => ({ ...s, exercises: [...s.exercises, exercise] }));
     if (category) ensureCategoryRegistered(category);
     setExerciseName('');
     if (category) setExpandedCategories(prev => ({ ...prev, [normalizeMuscle(category) || 'Без категории']: true }));
-    notify('Упражнение добавлено в библиотеку.');
+    notify('Упражнение добавлено.');
   }
 
   function addCustomInPicker(name: string) {
     const trimmed = name.trim();
     if (!trimmed) return;
     const existing = state.exercises.find(e => e.name.toLowerCase() === trimmed.toLowerCase());
-    if (existing) {
-      addExerciseToWorkout(existing);
-      return;
-    }
+    if (existing) { addExerciseToWorkout(existing); return; }
     const category = pickerNewCategory.trim();
     const exercise: Exercise = { id: uid(), name: trimmed, muscle: category, equipment: 'Пользовательское' };
     setState(s => ({ ...s, exercises: [...s.exercises, exercise] }));
@@ -718,155 +593,140 @@ export default function App() {
     addExerciseToWorkout(exercise);
   }
 
+  function ensureCategoryRegistered(cat: string) {
+    const trimmed = cat.trim();
+    if (!trimmed) return;
+    setState(s => {
+      const list = s.customCategories ?? [];
+      if (list.includes(trimmed) || DEFAULT_CATEGORIES.includes(trimmed)) return s;
+      return { ...s, customCategories: [...list, trimmed] };
+    });
+  }
+
   function saveEditedExercise() {
     if (!editingExercise) return;
     const name = editingExercise.name.trim();
-    if (!name) { notify('Название не может быть пустым.'); return; }
+    if (!name) { notify('Название пустое.'); return; }
     const dup = state.exercises.some(e => e.id !== editingExercise.id && e.name.toLowerCase() === name.toLowerCase());
-    if (dup) { notify('Упражнение с таким названием уже есть.'); return; }
+    if (dup) { notify('Уже есть.'); return; }
     const category = editingExercise.muscle.trim();
-    setState(s => ({
-      ...s,
-      exercises: s.exercises.map(e => e.id === editingExercise.id ? { ...e, name, muscle: category } : e)
-    }));
+    setState(s => ({ ...s, exercises: s.exercises.map(e => e.id === editingExercise.id ? { ...e, name, muscle: category } : e) }));
     if (category) ensureCategoryRegistered(category);
     setEditingExercise(null);
-    notify('Упражнение сохранено.');
+    notify('Сохранено.');
   }
 
   function deleteExercise(exercise: Exercise) {
-    if (isDefaultExercise(exercise.id)) {
-      notify('Встроенные упражнения удалять нельзя.');
-      return;
-    }
-    if (!window.confirm(`Удалить упражнение «${exercise.name}» из библиотеки?`)) return;
-    setState(s => ({
-      ...s,
-      exercises: s.exercises.filter(x => x.id !== exercise.id),
-      programs: s.programs.map(p => ({ ...p, exerciseIds: p.exerciseIds.filter(id => id !== exercise.id) }))
-    }));
-    notify('Упражнение удалено.');
+    if (isDefaultExercise(exercise.id)) { notify('Встроенные нельзя удалять.'); return; }
+    if (!window.confirm(`Удалить «${exercise.name}»?`)) return;
+    setState(s => ({ ...s, exercises: s.exercises.filter(x => x.id !== exercise.id), programs: s.programs.map(p => ({ ...p, exerciseIds: p.exerciseIds.filter(id => id !== exercise.id) })) }));
+    notify('Удалено.');
   }
 
   function renameCategory(oldName: string) {
     const normalized = normalizeMuscle(oldName);
-    if (!isUserCategory(normalized)) {
-      notify('Встроенные категории нельзя переименовать.');
-      return;
-    }
-    const newName = window.prompt(`Новое название категории «${oldName}»:`, oldName);
+    if (!isUserCategory(normalized)) { notify('Встроенные нельзя.'); return; }
+    const newName = window.prompt(`Новое название «${oldName}»:`, oldName);
     if (!newName) return;
     const trimmed = newName.trim();
-    if (!trimmed || trimmed === normalized) return;
-    if (allCategories.includes(trimmed)) {
-      notify('Категория с таким названием уже существует.');
-      return;
-    }
-    setState(s => ({
-      ...s,
-      customCategories: (s.customCategories ?? []).map(c => c === normalized ? trimmed : c),
-      exercises: s.exercises.map(e => normalizeMuscle(e.muscle) === normalized ? { ...e, muscle: trimmed } : e)
-    }));
-    notify('Категория переименована.');
+    if (!trimmed || trimmed === normalized || allCategories.includes(trimmed)) { notify('Ошибка или уже есть.'); return; }
+    setState(s => ({ ...s, customCategories: (s.customCategories ?? []).map(c => c === normalized ? trimmed : c), exercises: s.exercises.map(e => normalizeMuscle(e.muscle) === normalized ? { ...e, muscle: trimmed } : e) }));
+    notify('Переименовано.');
   }
 
   function deleteCategory(cat: string) {
     const normalized = normalizeMuscle(cat);
-    if (!isUserCategory(normalized)) {
-      notify('Встроенные категории удалять нельзя.');
-      return;
-    }
+    if (!isUserCategory(normalized)) { notify('Встроенные нельзя.'); return; }
     const count = state.exercises.filter(e => normalizeMuscle(e.muscle) === normalized).length;
-    const message = count > 0
-      ? `Удалить категорию «${cat}»?\n\nВ ней ${count} упражнений. Они перейдут в «Без категории».`
-      : `Удалить категорию «${cat}»?`;
-    if (!window.confirm(message)) return;
-    setState(s => ({
-      ...s,
-      customCategories: (s.customCategories ?? []).filter(c => c !== normalized),
-      exercises: s.exercises.map(e => normalizeMuscle(e.muscle) === normalized ? { ...e, muscle: '' } : e)
-    }));
-    notify('Категория удалена.');
+    if (!window.confirm(count > 0 ? `В категории ${count} упражнений. Они перейдут в «Без категории».` : `Удалить «${cat}»?`)) return;
+    setState(s => ({ ...s, customCategories: (s.customCategories ?? []).filter(c => c !== normalized), exercises: s.exercises.map(e => normalizeMuscle(e.muscle) === normalized ? { ...e, muscle: '' } : e) }));
+    notify('Удалено.');
   }
 
-  function toggleCategory(cat: string) {
-    setExpandedCategories(prev => ({ ...prev, [cat]: !prev[cat] }));
-  }
+  function toggleCategory(cat: string) { setExpandedCategories(prev => ({ ...prev, [cat]: !prev[cat] })); }
+  function toggleProgramExercise(id: string) { setProgramExerciseIds(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]); }
 
-  function toggleProgramExercise(id: string) {
-    setProgramExerciseIds(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]);
-  }
-
-  function exportData() {
-    downloadBackup(state);
-    notify('Резервная копия JSON подготовлена.');
-  }
-
+  function exportData() { downloadBackup(state); notify('Бэкап подготовлен.'); }
+  
   function importData(file?: File) {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
       try {
         const parsed: unknown = JSON.parse(String(reader.result));
-        if (!parsed || typeof parsed !== 'object' || !('app' in parsed) || parsed.app !== 'GymLog' || !('state' in parsed)) {
-          throw new Error('Файл не похож на резервную копию GymLog.');
-        }
-        const raw = parsed as {
-          exportedAt?: string;
-          summary?: { workoutsCount?: number; totalVolume?: number; xp?: number };
-          state: AppState;
-        };
-        const candidate = raw.state;
-        if (candidate.schemaVersion !== 1 || !Array.isArray(candidate.workouts) || !Array.isArray(candidate.exercises)) {
-          throw new Error('Структура резервной копии не поддерживается.');
-        }
-
-        const fileDate = raw.exportedAt
-          ? new Date(raw.exportedAt).toLocaleString('ru-RU', {
-              day: 'numeric', month: 'short', year: 'numeric',
-              hour: '2-digit', minute: '2-digit'
-            })
-          : 'дата не указана';
-        const fileSummary = raw.summary
-          ? `тренировок ${raw.summary.workoutsCount ?? '?'}, XP ${raw.summary.xp ?? '?'}`
-          : `тренировок ${candidate.workouts.length}`;
-
-        const message =
-          `Импортировать файл от ${fileDate}?\n` +
-          `Содержимое: ${fileSummary}.\n\n` +
-          `Текущие данные заменятся.`;
-
-        if (!window.confirm(message)) return;
+        if (!parsed || typeof parsed !== 'object' || !('app' in parsed) || parsed.app !== 'GymLog' || !('state' in parsed)) throw new Error('Не бэкап.');
+        const candidate = (parsed as { state: AppState }).state;
+        if (candidate.schemaVersion !== 1 || !Array.isArray(candidate.workouts) || !Array.isArray(candidate.exercises)) throw new Error('Формат не поддерживается.');
+        if (!window.confirm('Импорт заменит данные. Продолжить?')) return;
         setState(ensureState(candidate));
         notify('Импорт завершён.');
-      } catch (error) {
-        notify(error instanceof Error ? error.message : 'Не удалось импортировать файл.');
-      }
+      } catch (e) { notify(e instanceof Error ? e.message : 'Ошибка.'); }
     };
     reader.readAsText(file);
   }
 
-    function updateProfile(name: string, bodyWeight: string) {
-    setState(s => ({ ...s, profile: { ...s.profile, name, bodyWeight } }));
-  }
-
+  function updateProfile(name: string, bodyWeight: string) { setState(s => ({ ...s, profile: { ...s.profile, name, bodyWeight } })); }
+  
   async function handleAvatarUpload(file?: File) {
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      notify('Выбери файл изображения');
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    setTempImage(url);
+    if (!file || !file.type.startsWith('image/')) return;
+    setTempImage(URL.createObjectURL(file));
   }
 
   function removeAvatar() {
-    if (!window.confirm('Удалить фото профиля?')) return;
-    setState(s => ({
-      ...s,
-      profile: { name: s.profile.name, bodyWeight: s.profile.bodyWeight }
-    }));
+    if (!window.confirm('Удалить фото?')) return;
+    setState(s => ({ ...s, profile: { name: s.profile.name, bodyWeight: s.profile.bodyWeight } }));
     notify('Фото удалено');
+  }
+
+  async function handleLogout() {
+    try { await logOut(); await ensureAnonymousAuth(); notify('Вы вышли.'); } catch { notify('Ошибка.'); }
+  }
+
+  function openEmailAuth(mode: 'signup' | 'signin' | 'reset') {
+    setEmailAuthMode(mode); setEmailValue(user?.email || ''); setPasswordValue(''); setEmailAuthError(null); setEmailAuthOpen(true);
+  }
+
+  async function handleEmailAuth() {
+    const email = emailValue.trim().toLowerCase();
+    const password = passwordValue;
+    setEmailAuthError(null);
+    if (!email || !email.includes('@')) { setEmailAuthError('Корректный email?'); return; }
+    if (emailAuthMode === 'reset') {
+      setEmailAuthLoading(true);
+      try { await resetPassword(email); setEmailAuthOpen(false); notify(`Письмо на ${email}`); } 
+      catch (err: any) { setEmailAuthError(err?.code === 'auth/user-not-found' ? 'Не найден.' : 'Ошибка.'); } 
+      finally { setEmailAuthLoading(false); }
+      return;
+    }
+    if (password.length < 6) { setEmailAuthError('Пароль от 6 симв.'); return; }
+    setEmailAuthLoading(true);
+    try {
+      if (emailAuthMode === 'signup') {
+        try {
+          const linkedUser = await linkWithEmail(email, password);
+          setUser(linkedUser); setEmailAuthOpen(false); setEmailValue(''); setPasswordValue('');
+          notify(`Аккаунт создан: ${email}`);
+        } catch (err: any) {
+          const code = err?.code || '';
+          if (code === 'auth/email-already-in-use') setEmailAuthError('Email занят. Войдите.');
+          else if (code === 'auth/weak-password') setEmailAuthError('Слишком простой.');
+          else if (code === 'auth/credential-already-in-use') setEmailAuthError('Уже привязан. Войдите.');
+          else setEmailAuthError(`Ошибка: ${code}`);
+        }
+      } else {
+        try {
+          const signedUser = await signInWithEmail(email, password);
+          setUser(signedUser); setEmailAuthOpen(false); setEmailValue(''); setPasswordValue('');
+          notify(`Вы вошли: ${email}`);
+        } catch (err: any) {
+          const code = err?.code || '';
+          if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') setEmailAuthError('Неверный пароль.');
+          else if (code === 'auth/user-not-found') setEmailAuthError('Нет аккаунта. Создайте.');
+          else if (code === 'auth/too-many-requests') setEmailAuthError('Слишком много попыток. Подождите.');
+          else setEmailAuthError(`Ошибка: ${code}`);
+        }
+      }
+    } finally { setEmailAuthLoading(false); }
   }
 
   const navItems: { id: Tab; label: string; icon: typeof Home }[] = [
@@ -889,17 +749,47 @@ export default function App() {
 
   const isRegistered = Boolean(user && !user.isAnonymous);
 
+  // Сетка упражнений
+  const filteredExercises = useMemo(() => state.exercises.filter(e => `${e.name} ${e.muscle} ${e.equipment}`.toLocaleLowerCase('ru-RU').includes(pickerQuery.toLocaleLowerCase('ru-RU'))), [state.exercises, pickerQuery]);
+  const filteredProgramExercises = useMemo(() => {
+    const q = programSearch.toLowerCase().trim();
+    if (!q) return state.exercises;
+    return state.exercises.filter(e => `${e.name} ${e.muscle} ${e.equipment}`.toLowerCase().includes(q));
+  }, [state.exercises, programSearch]);
+  const groupedExercises = useMemo(() => {
+    const groups: Record<string, Exercise[]> = {};
+    for (const e of state.exercises) {
+      const cat = normalizeMuscle(e.muscle) || 'Без категории';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(e);
+    }
+    for (const cat in groups) groups[cat].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    return groups;
+  }, [state.exercises]);
+
+  const customAchievements = [
+    { id: 'first', icon: Award, title: 'Первый шаг', desc: 'Заверши тренировку' },
+    { id: 'five', icon: Star, title: 'Пятёрка', desc: '5 тренировок' },
+    { id: 'ten', icon: Star, title: 'Десятка', desc: '10 тренировок' },
+    { id: 'perfect_week', icon: Target, title: 'Идеальная неделя', desc: 'Цель по кольцу выполнена' },
+    { id: 'marathon', icon: Trophy, title: 'Марафонец', desc: '10 тренировок за месяц' },
+    { id: 'streak3', icon: Zap, title: 'На волне', desc: 'Серия 3 дня' },
+    { id: 'iron_streak', icon: Flame, title: 'Железная серия', desc: '5 дней подряд (от 30 мин)' },
+    { id: 'streak7', icon: Zap, title: 'Неделя силы', desc: 'Серия 7 дней' },
+    { id: 'vol10k', icon: Dumbbell, title: 'Первая тонна', desc: '10 000 кг объёма' },
+    { id: 'vol50k', icon: Dumbbell, title: 'Пять тонн', desc: '50 000 кг объёма' },
+    { id: 'sets100', icon: Check, title: 'Сто подходов', desc: '100 выполненных подходов' }
+  ];
+
   return (
     <div className="app-shell">
-            <header className="topbar">
+      <header className="topbar">
         <button className="brand" onClick={() => setTab('home')} aria-label="На главную">
           <img src={`${import.meta.env.BASE_URL}logo.png`} alt="GymLog" className="brand-mark-img" />
           <span><b>GYMLOG</b><small>TRAINING JOURNAL</small></span>
         </button>
-          <button className="avatar" onClick={() => setTab('profile')} aria-label="Открыть профиль">
-          {state.profile.avatar
-            ? <img src={state.profile.avatar} alt="" />
-            : (state.profile.name.trim()[0] || 'А').toLocaleUpperCase('ru-RU')}
+        <button className="avatar" onClick={() => setTab('profile')} aria-label="Открыть профиль">
+          {state.profile.avatar ? <img src={state.profile.avatar} alt="" /> : (state.profile.name.trim()[0] || 'А').toLocaleUpperCase('ru-RU')}
         </button>
       </header>
 
@@ -909,20 +799,20 @@ export default function App() {
           <h1>Сводка.</h1>
           <p className="intro">Прогресс за последние 7 дней.</p>
 
-                    <div className="rings-card">
+          <div className={`rings-card ${isRing1Closed && isRing2Closed ? 'all-closed' : ''}`}>
             <ActivityRings rings={[
-              { percent: ring1Value / Math.max(1, state.settings.ring1.goal), color: '#ff6482' },
-              { percent: ring2Value / Math.max(1, state.settings.ring2.goal), color: '#d0f477' },
-              { percent: (xp % 250) / 250, color: '#32d4ff' }
+              { percent: ring1Value / Math.max(1, state.settings.ring1.goal), color: '#ff6482', closed: isRing1Closed },
+              { percent: ring2Value / Math.max(1, state.settings.ring2.goal), color: '#d0f477', closed: isRing2Closed },
+              { percent: (xp % 250) / 250, color: '#32d4ff', closed: (xp % 250) >= 250 }
             ]} />
             <div className="rings-legend">
-              <div className="ring-legend-row">
+              <div className={`ring-legend-row ${isRing1Closed ? 'closed' : ''}`}>
                 <span className="ring-dot" style={{ background: '#ff6482' }} />
-                <div><b>{ring1Info.shortLabel}</b><small>{ring1Value} из {state.settings.ring1.goal} {ring1Info.unit}</small></div>
+                <div><b>{ring1Info.shortLabel} {isRing1Closed && <Check size={12} className="ring-check"/>}</b><small>{ring1Value} из {state.settings.ring1.goal} {ring1Info.unit}</small></div>
               </div>
-              <div className="ring-legend-row">
+              <div className={`ring-legend-row ${isRing2Closed ? 'closed' : ''}`}>
                 <span className="ring-dot" style={{ background: '#d0f477' }} />
-                <div><b>{ring2Info.shortLabel}</b><small>{ring2Value} из {state.settings.ring2.goal} {ring2Info.unit}</small></div>
+                <div><b>{ring2Info.shortLabel} {isRing2Closed && <Check size={12} className="ring-check"/>}</b><small>{ring2Value} из {state.settings.ring2.goal} {ring2Info.unit}</small></div>
               </div>
               <div className="ring-legend-row">
                 <span className="ring-dot" style={{ background: '#32d4ff' }} />
@@ -939,17 +829,11 @@ export default function App() {
             <div className="quick-start">
               <button className="quick-start-btn" onClick={() => startFromWorkout(state.workouts[0])}>
                 <RefreshCw size={18} />
-                <div>
-                  <b>Повторить последнюю</b>
-                  <small>{state.workouts[0].name} · {localDate(state.workouts[0].endedAt)} · {setCount(state.workouts[0])} подходов</small>
-                </div>
+                <div><b>Повторить последнюю</b><small>{state.workouts[0].name} · {localDate(state.workouts[0].endedAt)} · {setCount(state.workouts[0])} подходов</small></div>
               </button>
               <button className="quick-start-btn" onClick={() => setHistoryPickerOpen(true)}>
                 <History size={18} />
-                <div>
-                  <b>Из истории</b>
-                  <small>выбрать любую тренировку</small>
-                </div>
+                <div><b>Из истории</b><small>выбрать любую тренировку</small></div>
               </button>
             </div>
           )}
@@ -975,12 +859,8 @@ export default function App() {
             <p>Начни с нуля, повтори прошлую, выбери из истории или запусти программу.</p>
             <button className="button button-primary" onClick={() => startWorkout()}>Начать с нуля</button>
             {state.workouts.length > 0 && <div className="quick-programs">
-              <button className="button button-secondary" onClick={() => startFromWorkout(state.workouts[0])}>
-                <RefreshCw size={15} /> Повторить последнюю
-              </button>
-              <button className="button button-secondary" onClick={() => setHistoryPickerOpen(true)}>
-                <History size={15} /> Из истории
-              </button>
+              <button className="button button-secondary" onClick={() => startFromWorkout(state.workouts[0])}><RefreshCw size={15} /> Повторить последнюю</button>
+              <button className="button button-secondary" onClick={() => setHistoryPickerOpen(true)}><History size={15} /> Из истории</button>
             </div>}
             {state.programs.length > 0 && <div className="quick-programs">{state.programs.map(p => <button key={p.id} className="button button-secondary" onClick={() => startWorkout(p)}>{p.name} <span>↗</span></button>)}</div>}
           </div> : <>
@@ -990,14 +870,14 @@ export default function App() {
               <span className="workout-timer-value">{formatTimer(now - currentWorkout.startedAt)}</span>
             </div>
             <label className="field-label">Название тренировки<input className="field" value={currentWorkout.name} onChange={e => patchActive(a => ({ ...a, name: e.target.value }))} maxLength={60} /></label>
-            <div className="section-heading"><h2>Упражнения</h2><button className="icon-button" onClick={() => setPickerOpen(true)} aria-label="Добавить упражнение"><Plus size={20} /></button></div>
+            <div className="section-heading"><h2>Упражнения</h2><button className="icon-button" onClick={() => setPickerOpen(true)} aria-label="Добавить"><Plus size={20} /></button></div>
             {currentWorkout.exercises.length === 0 && <Empty title="Пока нет упражнений" text="Добавь первое упражнение из библиотеки." />}
             {currentWorkout.exercises.map((exercise, index) => <article className="exercise-card" key={exercise.id}>
               <div className="exercise-title">
                 <button className="exercise-collapse" onClick={() => patchActive(a => ({ ...a, exercises: a.exercises.map(e => e.id === exercise.id ? { ...e, collapsed: !e.collapsed } : e) }))}>
                   <span className="exercise-number">{String(index + 1).padStart(2, '0')}</span><span className="exercise-name">{exercise.name}<small>{exercise.sets.filter(s => s.done).length} из {exercise.sets.length} подходов</small></span>{exercise.collapsed ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
                 </button>
-                <button className="icon-button subtle" aria-label="Удалить упражнение" onClick={() => patchActive(a => ({ ...a, exercises: a.exercises.filter(e => e.id !== exercise.id) }))}><X size={17} /></button>
+                <button className="icon-button subtle" aria-label="Удалить" onClick={() => patchActive(a => ({ ...a, exercises: a.exercises.filter(e => e.id !== exercise.id) }))}><X size={17} /></button>
               </div>
               {!exercise.collapsed && <div className="sets">
                 <div className="set-header"><span>СЕТ</span><span>ВЕС, КГ</span><span>ПОВТОРЫ</span><span></span><span>✓</span></div>
@@ -1011,37 +891,14 @@ export default function App() {
                     <div key={set.id}>
                       <div className={`set-row ${set.done ? 'set-done' : ''}`}>
                         {canCopy ? (
-                          <button
-                            className="set-copy"
-                            aria-label="Скопировать из предыдущего подхода"
-                            onClick={() => prevSet && updateSet(exercise.id, set.id, { weight: prevSet.weight, reps: prevSet.reps })}
-                          >
-                            <Copy size={13} />
-                          </button>
-                        ) : (
-                          <span className="set-index">{i + 1}</span>
-                        )}
-                        <input aria-label={`Вес, подход ${i + 1}`} className="set-input" type="number" min="0" step="0.5" placeholder="—" value={set.weight} onChange={e => updateSet(exercise.id, set.id, { weight: e.target.value })} />
-                        <input aria-label={`Повторы, подход ${i + 1}`} className="set-input" type="number" min="0" step="1" placeholder="—" value={set.reps} onChange={e => updateSet(exercise.id, set.id, { reps: e.target.value })} />
-                        <button
-                          className={`set-note-toggle ${set.note && set.note.trim() ? 'has-note' : ''}`}
-                          aria-label={showNote ? 'Скрыть заметку' : 'Добавить заметку'}
-                          onClick={() => toggleNote(exercise.id, set.id)}
-                        >
-                          <MessageSquare size={14} />
-                        </button>
-                        <button className={`set-check ${set.done ? 'checked' : ''}`} aria-label={set.done ? 'Снять отметку подхода' : 'Отметить подход выполненным'} onClick={() => updateSet(exercise.id, set.id, { done: !set.done })}>{set.done && <Check size={16} />}</button>
+                          <button className="set-copy" aria-label="Копировать" onClick={() => prevSet && updateSet(exercise.id, set.id, { weight: prevSet.weight, reps: prevSet.reps })}><Copy size={13} /></button>
+                        ) : (<span className="set-index">{i + 1}</span>)}
+                        <input aria-label={`Вес ${i + 1}`} className="set-input" type="number" min="0" step="0.5" placeholder="—" value={set.weight} onChange={e => updateSet(exercise.id, set.id, { weight: e.target.value })} />
+                        <input aria-label={`Повторы ${i + 1}`} className="set-input" type="number" min="0" step="1" placeholder="—" value={set.reps} onChange={e => updateSet(exercise.id, set.id, { reps: e.target.value })} />
+                        <button className={`set-note-toggle ${set.note && set.note.trim() ? 'has-note' : ''}`} aria-label="Заметка" onClick={() => toggleNote(exercise.id, set.id)}><MessageSquare size={14} /></button>
+                        <button className={`set-check ${set.done ? 'checked' : ''}`} aria-label="Выполнено" onClick={() => updateSet(exercise.id, set.id, { done: !set.done })}>{set.done && <Check size={16} />}</button>
                       </div>
-                      {showNote && (
-                        <textarea
-                          className="set-note-input"
-                          placeholder="Заметка к подходу…"
-                          value={set.note || ''}
-                          onChange={e => updateSet(exercise.id, set.id, { note: e.target.value })}
-                          rows={1}
-                          maxLength={300}
-                        />
-                      )}
+                      {showNote && (<textarea className="set-note-input" placeholder="Заметка к подходу…" value={set.note || ''} onChange={e => updateSet(exercise.id, set.id, { note: e.target.value })} rows={1} maxLength={300} />)}
                     </div>
                   );
                 })}
@@ -1050,7 +907,7 @@ export default function App() {
             </article>)}
             <button className="button button-secondary full-width" onClick={() => setPickerOpen(true)}><Plus size={17} /> Добавить упражнение</button>
             <div className="finish-bar"><div><b>{setCount(currentWorkout)}</b><small>выполнено подходов</small></div><button className={`button button-primary ${finishing ? 'is-finishing' : ''}`} onClick={finishWorkout} disabled={finishing}>{finishing ? 'Сохраняем…' : <>Завершить <Check size={17} /></>}</button></div>
-            <button className="text-danger" onClick={() => { if (window.confirm('Отменить текущую тренировку? Она не попадёт в историю.')) { setState(s => ({ ...s, activeWorkout: null })); notify('Тренировка отменена.'); } }}>Отменить тренировку</button>
+            <button className="text-danger" onClick={() => { if (window.confirm('Отменить тренировку?')) { setState(s => ({ ...s, activeWorkout: null })); notify('Отменена.'); } }}>Отменить тренировку</button>
           </>}
         </section>}
 
@@ -1058,102 +915,42 @@ export default function App() {
           <p className="eyebrow">ПЛАНИРОВАНИЕ</p>
           <h1>Мои программы.</h1>
           <p className="intro">Собери шаблон один раз и запускай его, когда понадобится.</p>
-
           <button className="menu-card" onClick={() => { setProgramsView('library'); setLibraryTab('browse'); }}>
             <div className="menu-card-icon"><BookOpen size={22} /></div>
-            <div className="menu-card-body">
-              <b>Библиотека упражнений</b>
-              <small>{state.exercises.length} упражнений · {orderedCategories.length} категорий</small>
-            </div>
+            <div className="menu-card-body"><b>Библиотека упражнений</b><small>{state.exercises.length} упражнений · {orderedCategories.length} категорий</small></div>
             <ChevronRight size={20} />
           </button>
-
-          <button className="button button-primary full-width" onClick={() => { if (showProgramBuilder) { cancelProgramEdit(); } else { setShowProgramBuilder(true); } }}>
+          <button className="button button-primary full-width" onClick={() => { if (showProgramBuilder) cancelProgramEdit(); else setShowProgramBuilder(true); }}>
             <Plus size={17} /> {showProgramBuilder ? 'Скрыть билдер' : 'Создать программу'}
           </button>
-
           {showProgramBuilder && <div className="panel builder">
-            <div className="section-heading" style={{ marginTop: 0 }}>
-              <h2>{editingProgramId ? 'Редактирование программы' : 'Новая программа'}</h2>
-              {editingProgramId && <button className="text-link" onClick={cancelProgramEdit}>Отмена</button>}
-            </div>
-
-            <label className="field-label">Название программы
-              <input className="field" placeholder="Например, Верх тела A" value={programName} onChange={e => setProgramName(e.target.value)} maxLength={60} />
-            </label>
-
-            <label className="field-label">Примечание (опционально)
-              <textarea
-                className="program-note-textarea"
-                placeholder="Например: тренировка на массу, отдых 90 сек"
-                value={programNote}
-                onChange={e => setProgramNote(e.target.value)}
-                rows={2}
-                maxLength={500}
-              />
-            </label>
-
+            <div className="section-heading" style={{ marginTop: 0 }}><h2>{editingProgramId ? 'Редактирование' : 'Новая программа'}</h2>{editingProgramId && <button className="text-link" onClick={cancelProgramEdit}>Отмена</button>}</div>
+            <label className="field-label">Название<input className="field" placeholder="Например, Верх тела A" value={programName} onChange={e => setProgramName(e.target.value)} maxLength={60} /></label>
+            <label className="field-label">Примечание<textarea className="program-note-textarea" placeholder="Например: отдых 90 сек" value={programNote} onChange={e => setProgramNote(e.target.value)} rows={2} maxLength={500} /></label>
             <p className="eyebrow">ВЫБЕРИ УПРАЖНЕНИЯ ({programExerciseIds.length} выбрано)</p>
-
-            <div className="selection-list-search">
-              <input
-                className="field"
-                placeholder="Поиск упражнения..."
-                value={programSearch}
-                onChange={e => setProgramSearch(e.target.value)}
-              />
-            </div>
-
-            {!showProgramCustomEx && (
-              <button className="add-set" style={{ marginBottom: 10 }} onClick={() => setShowProgramCustomEx(true)}>
-                <Plus size={15} /> Добавить своё упражнение
-              </button>
-            )}
-
+            <div className="selection-list-search"><input className="field" placeholder="Поиск..." value={programSearch} onChange={e => setProgramSearch(e.target.value)} /></div>
+            {!showProgramCustomEx && (<button className="add-set" style={{ marginBottom: 10 }} onClick={() => setShowProgramCustomEx(true)}><Plus size={15} /> Добавить своё упражнение</button>)}
             {showProgramCustomEx && (
               <div className="program-custom-form">
-                <input
-                  className="field"
-                  placeholder="Название упражнения"
-                  value={programCustomExName}
-                  onChange={e => setProgramCustomExName(e.target.value)}
-                  maxLength={80}
-                />
-                <CategorySelect
-                  value={programCustomExCategory}
-                  onChange={(v) => { setProgramCustomExCategory(v); if (v) ensureCategoryRegistered(v); }}
-                  categories={allCategories}
-                />
+                <input className="field" placeholder="Название" value={programCustomExName} onChange={e => setProgramCustomExName(e.target.value)} maxLength={80} />
+                <CategorySelect value={programCustomExCategory} onChange={(v) => { setProgramCustomExCategory(v); if (v) ensureCategoryRegistered(v); }} categories={allCategories} />
                 <div className="program-custom-actions">
-                  <button className="button button-secondary" onClick={() => { setShowProgramCustomEx(false); setProgramCustomExName(''); setProgramCustomExCategory(DEFAULT_CATEGORIES[0]); }}>
-                    Отмена
-                  </button>
-                  <button className="button button-primary" onClick={addCustomExerciseFromProgram}>
-                    <Plus size={15} /> Добавить
-                  </button>
+                  <button className="button button-secondary" onClick={() => { setShowProgramCustomEx(false); setProgramCustomExName(''); setProgramCustomExCategory(DEFAULT_CATEGORIES[0]); }}>Отмена</button>
+                  <button className="button button-primary" onClick={addCustomExerciseFromProgram}><Plus size={15} /> Добавить</button>
                 </div>
               </div>
             )}
-
             <div className="selection-list">
               {filteredProgramExercises.length === 0 && <div className="picker-empty">Ничего не найдено</div>}
               {filteredProgramExercises.map(e => (
                 <label key={e.id} className="selection-row">
-                  <input
-                    type="checkbox"
-                    checked={programExerciseIds.includes(e.id)}
-                    onChange={() => toggleProgramExercise(e.id)}
-                  />
+                  <input type="checkbox" checked={programExerciseIds.includes(e.id)} onChange={() => toggleProgramExercise(e.id)} />
                   <span>{e.name}<small>{normalizeMuscle(e.muscle) || 'Без категории'} · {e.equipment}</small></span>
                 </label>
               ))}
             </div>
-
-            <button className="button button-primary full-width" onClick={addProgram}>
-              <Save size={16} /> {editingProgramId ? 'Сохранить изменения' : 'Сохранить программу'}
-            </button>
+            <button className="button button-primary full-width" onClick={addProgram}><Save size={16} /> {editingProgramId ? 'Сохранить изменения' : 'Сохранить программу'}</button>
           </div>}
-
           {state.programs.length ? <div className="program-list">{state.programs.map(p => <article className="panel program-card" key={p.id}>
             <div className="program-icon"><BookOpen size={20} /></div>
             <div className="program-main">
@@ -1163,32 +960,24 @@ export default function App() {
               <div className="program-exercises">{state.exercises.filter(e => p.exerciseIds.includes(e.id)).slice(0, 4).map(e => e.name).join(' · ')}</div>
               <div className="program-actions">
                 <button className="button button-primary" onClick={() => startWorkout(p)}>Начать ↗</button>
-                <button className="icon-button subtle" aria-label="Редактировать" onClick={() => startEditProgram(p)}><Pencil size={15} /></button>
-                <button className="icon-button subtle" aria-label="Удалить" onClick={() => { if (window.confirm(`Удалить программу «${p.name}»?`)) setState(s => ({ ...s, programs: s.programs.filter(x => x.id !== p.id) })); }}><Trash2 size={15} /></button>
+                <button className="icon-button subtle" aria-label="Ред." onClick={() => startEditProgram(p)}><Pencil size={15} /></button>
+                <button className="icon-button subtle" aria-label="Уд." onClick={() => { if (window.confirm(`Удалить «${p.name}»?`)) setState(s => ({ ...s, programs: s.programs.filter(x => x.id !== p.id) })); }}><Trash2 size={15} /></button>
               </div>
             </div>
-          </article>)}</div> : <Empty title="Программ пока нет" text="Создай шаблон. Он не изменит текущую тренировку, пока ты сам его не запустишь." />}
+          </article>)}</div> : <Empty title="Программ пока нет" text="Создай шаблон." />}
         </section>}
 
         {tab === 'programs' && programsView === 'library' && <section>
-          <button className="back-link" onClick={() => setProgramsView('list')}>
-            <ChevronLeft size={18} /> Программы
-          </button>
+          <button className="back-link" onClick={() => setProgramsView('list')}><ChevronLeft size={18} /> Программы</button>
           <h1>Библиотека.</h1>
           <p className="intro">Упражнения для тренировок и программ.</p>
-
           <div className="library-tabs">
-            <button className={`library-tab ${libraryTab === 'browse' ? 'active' : ''}`} onClick={() => setLibraryTab('browse')}>
-              <BookOpen size={20} /><span>Библиотека упражнений</span>
-            </button>
-            <button className={`library-tab ${libraryTab === 'add' ? 'active' : ''}`} onClick={() => setLibraryTab('add')}>
-              <Plus size={20} /><span>Добавить своё</span>
-            </button>
+            <button className={`library-tab ${libraryTab === 'browse' ? 'active' : ''}`} onClick={() => setLibraryTab('browse')}><BookOpen size={20} /><span>Упражнения</span></button>
+            <button className={`library-tab ${libraryTab === 'add' ? 'active' : ''}`} onClick={() => setLibraryTab('add')}><Plus size={20} /><span>Добавить своё</span></button>
           </div>
-
           {libraryTab === 'browse' && (
             <div className="category-list">
-              {state.exercises.length === 0 && <Empty title="Библиотека пуста" text="Добавь упражнения на вкладке «Добавить своё»." />}
+              {state.exercises.length === 0 && <Empty title="Пусто" text="Добавь упражнения." />}
               {orderedCategories.filter(cat => (groupedExercises[cat]?.length || 0) > 0 || (state.customCategories ?? []).includes(cat)).map(cat => {
                 const exercises = groupedExercises[cat] || [];
                 const expanded = expandedCategories[cat] ?? false;
@@ -1197,16 +986,13 @@ export default function App() {
                   <div className="category-block" key={cat}>
                     <div className="category-header-wrap">
                       <button className="category-header" onClick={() => toggleCategory(cat)}>
-                        <div>
-                          <b>{cat}</b>
-                          <small>{exercises.length} упражнений</small>
-                        </div>
+                        <div><b>{cat}</b><small>{exercises.length} упражнений</small></div>
                         {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                       </button>
                       {userCat && (
                         <div className="category-tools">
-                          <button className="icon-button subtle" aria-label="Переименовать категорию" onClick={() => renameCategory(cat)}><Pencil size={14} /></button>
-                          <button className="icon-button subtle" aria-label="Удалить категорию" onClick={() => deleteCategory(cat)}><Trash2 size={14} /></button>
+                          <button className="icon-button subtle" aria-label="Ред." onClick={() => renameCategory(cat)}><Pencil size={14} /></button>
+                          <button className="icon-button subtle" aria-label="Уд." onClick={() => deleteCategory(cat)}><Trash2 size={14} /></button>
                         </div>
                       )}
                     </div>
@@ -1215,42 +1001,26 @@ export default function App() {
                         const defaultEx = isDefaultExercise(e.id);
                         return (
                           <div className="library-row" key={e.id}>
-                            <div>
-                              <b>{e.name}</b>
-                              <small>{e.equipment}{defaultEx ? ' · встроенное' : ''}</small>
-                            </div>
+                            <div><b>{e.name}</b><small>{e.equipment}{defaultEx ? ' · встроенное' : ''}</small></div>
                             <div className="library-row-actions">
-                              {!defaultEx && (
-                                <button className="icon-button subtle" aria-label={`Редактировать ${e.name}`} onClick={() => setEditingExercise({ ...e })}><Pencil size={14} /></button>
-                              )}
-                              {!defaultEx && (
-                                <button className="icon-button subtle" aria-label={`Удалить ${e.name}`} onClick={() => deleteExercise(e)}><Trash2 size={14} /></button>
-                              )}
+                              {!defaultEx && <button className="icon-button subtle" aria-label={`Ред. ${e.name}`} onClick={() => setEditingExercise({ ...e })}><Pencil size={14} /></button>}
+                              {!defaultEx && <button className="icon-button subtle" aria-label={`Уд. ${e.name}`} onClick={() => deleteExercise(e)}><Trash2 size={14} /></button>}
                             </div>
                           </div>
                         );
                       })}
-                      {exercises.length === 0 && <div className="picker-empty">Категория пуста</div>}
+                      {exercises.length === 0 && <div className="picker-empty">Пусто</div>}
                     </div>}
                   </div>
                 );
               })}
             </div>
           )}
-
           {libraryTab === 'add' && (
             <div className="panel builder">
-              <label className="field-label">Название упражнения
-                <input className="field" value={exerciseName} onChange={e => setExerciseName(e.target.value)} placeholder="Например, Тяга к поясу" maxLength={60} />
-              </label>
-              <label className="field-label">Категория
-                <CategorySelect
-                  value={exerciseMuscle}
-                  onChange={(v) => { setExerciseMuscle(v); if (v) ensureCategoryRegistered(v); }}
-                  categories={allCategories}
-                />
-              </label>
-              <button className="button button-primary full-width" onClick={addCustomExercise}><Plus size={16} /> Добавить в библиотеку</button>
+              <label className="field-label">Название<input className="field" value={exerciseName} onChange={e => setExerciseName(e.target.value)} placeholder="Например, Тяга к поясу" maxLength={60} /></label>
+              <label className="field-label">Категория<CategorySelect value={exerciseMuscle} onChange={(v) => { setExerciseMuscle(v); if (v) ensureCategoryRegistered(v); }} categories={allCategories} /></label>
+              <button className="button button-primary full-width" onClick={addCustomExercise}><Plus size={16} /> Добавить</button>
             </div>
           )}
         </section>}
@@ -1258,23 +1028,11 @@ export default function App() {
         {tab === 'history' && <section>
           <p className="eyebrow">ТВОЯ ДИНАМИКА</p>
           <h1>История.</h1>
-          <p className="intro">Все завершённые тренировки и показатели, пересчитываемые из истории.</p>
-
+          <p className="intro">Все завершённые тренировки.</p>
           <div className="history-tabs">
-            <button
-              className={`library-tab ${historyView === 'list' ? 'active' : ''}`}
-              onClick={() => setHistoryView('list')}
-            >
-              <BarChart3 size={20} /><span>Список</span>
-            </button>
-            <button
-              className={`library-tab ${historyView === 'calendar' ? 'active' : ''}`}
-              onClick={openCalendar}
-            >
-              <Calendar size={20} /><span>Календарь</span>
-            </button>
+            <button className={`library-tab ${historyView === 'list' ? 'active' : ''}`} onClick={() => setHistoryView('list')}><BarChart3 size={20} /><span>Список</span></button>
+            <button className={`library-tab ${historyView === 'calendar' ? 'active' : ''}`} onClick={openCalendar}><Calendar size={20} /><span>Календарь</span></button>
           </div>
-
           {historyView === 'list' && (
             <>
               <div className="stats-grid">
@@ -1284,63 +1042,40 @@ export default function App() {
                 <Metric label="XP" value={String(xp)} note={`уровень ${level}`} />
               </div>
               {state.workouts.length ? <div className="history-list">{state.workouts.map(w => <article className="panel history-card" key={w.id}>
-                <div className="history-top"><div><h3>{w.name}</h3><p>{localDate(w.endedAt)}, {localTime(w.startedAt)}–{localTime(w.endedAt)} · {formatDuration(w.startedAt, w.endedAt)}</p></div><button className="icon-button subtle" aria-label="Удалить тренировку" onClick={() => deleteWorkout(w.id)}><Trash2 size={16} /></button></div>
+                <div className="history-top"><div><h3>{w.name}</h3><p>{localDate(w.endedAt)}, {localTime(w.startedAt)}–{localTime(w.endedAt)} · {formatDuration(w.startedAt, w.endedAt)}</p></div><button className="icon-button subtle" aria-label="Уд." onClick={() => deleteWorkout(w.id)}><Trash2 size={16} /></button></div>
                 <div className="history-metrics"><span><Dumbbell size={14} /> {w.exercises.length} упр.</span><span><Check size={14} /> {setCount(w)} подходов</span><span><Activity size={14} /> {fmt(volume(w))} кг</span><strong>+{w.earnedXp} XP</strong></div>
-                <details><summary>Упражнения и подходы</summary>{w.exercises.map(e => {
+                <details><summary>Упражнения</summary>{w.exercises.map(e => {
                   const doneSets = e.sets.filter(s => s.done);
                   return (
                     <div className="history-exercise" key={e.id}>
-                      <div className="history-exercise-title">
-                        <b>{e.name}</b>
-                        <button
-                          className="chart-trigger"
-                          aria-label="График прогресса"
-                          onClick={() => setGraphExercise({ id: e.exerciseId, name: e.name })}
-                        >
-                          <TrendingUp size={14} />
-                        </button>
-                      </div>
-                      {doneSets.length === 0 ? (
-                        <span className="history-empty-note">Нет отмеченных подходов</span>
-                      ) : (
-                        <div className="history-sets-list">
-                          {doneSets.map((s, idx) => (
-                            <div key={s.id} className="history-set">
-                              <span className="history-set-main">Подход {idx + 1}: {s.weight || 0} кг × {s.reps || 0}</span>
-                              {s.note && s.note.trim() && (
-                                <span className="history-set-note">{s.note}</span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
+                      <div className="history-exercise-title"><b>{e.name}</b><button className="chart-trigger" aria-label="График" onClick={() => setGraphExercise({ id: e.exerciseId, name: e.name })}><TrendingUp size={14} /></button></div>
+                      {doneSets.length === 0 ? (<span className="history-empty-note">Нет выполненных</span>) : (
+                        <div className="history-sets-list">{doneSets.map((s, idx) => (
+                          <div key={s.id} className="history-set">
+                            <span className="history-set-main">Подход {idx + 1}: {s.weight || 0} кг × {s.reps || 0}</span>
+                            {s.note && s.note.trim() && (<span className="history-set-note">{s.note}</span>)}
+                          </div>
+                        ))}</div>
                       )}
                     </div>
                   );
                 })}</details>
-              </article>)}</div> : <Empty title="История пока пуста" text="Заверши первую тренировку. Она появится здесь вместе с деталями подходов." />}
-              {state.workouts.length > 0 && (
-                <button className="text-danger clear-history-bottom" onClick={clearHistory}>Очистить всю историю</button>
-              )}
+              </article>)}</div> : <Empty title="История пуста" text="Заверши тренировку." />}
+              {state.workouts.length > 0 && (<button className="text-danger clear-history-bottom" onClick={clearHistory}>Очистить историю</button>)}
             </>
           )}
-
           {historyView === 'calendar' && (
             <>
-              <div className="calendar-card">
+              <div className={`calendar-card ${isIdealMonth ? 'calendar-ideal' : ''}`}>
                 <div className="calendar-header">
-                  <button className="calendar-nav" onClick={goToPrevMonth} aria-label="Предыдущий месяц">
-                    <ChevronLeft size={20} />
-                  </button>
-                  <div className="calendar-month">{formatMonthYear(calendarDate)}</div>
-                  <button className="calendar-nav" onClick={goToNextMonth} aria-label="Следующий месяц">
-                    <ChevronRight size={20} />
-                  </button>
+                  <button className="calendar-nav" onClick={goToPrevMonth} aria-label="Назад"><ChevronLeft size={20} /></button>
+                  <div className="calendar-month-wrap">
+                    <div className={`calendar-month ${isIdealMonth ? 'gold-text' : ''}`}>{formatMonthYear(calendarDate)}</div>
+                    {isIdealMonth && <div className="calendar-ideal-badge">Идеальный месяц</div>}
+                  </div>
+                  <button className="calendar-nav" onClick={goToNextMonth} aria-label="Вперед"><ChevronRight size={20} /></button>
                 </div>
-
-                <div className="calendar-weekdays">
-                  {WEEKDAYS.map(d => <div key={d} className="calendar-weekday">{d}</div>)}
-                </div>
-
+                <div className="calendar-weekdays">{WEEKDAYS.map(d => <div key={d} className="calendar-weekday">{d}</div>)}</div>
                 <div className="calendar-grid">
                   {calendarCells.map((date, i) => {
                     if (!date) return <div key={`empty-${i}`} className="calendar-day empty" />;
@@ -1349,113 +1084,55 @@ export default function App() {
                     const isSelected = key === selectedDay;
                     const hasWorkout = Boolean(workoutsByDay[key]?.length);
                     const isFuture = date.getTime() > Date.now() && !isToday;
+                    const weekStart = getStartOfWeek(date);
+                    const isGoldWeek = closedWeekStarts.has(weekStart);
                     const classes = [
                       'calendar-day',
                       isToday ? 'today' : '',
                       isSelected ? 'selected' : '',
                       hasWorkout ? 'has-workout' : '',
-                      isFuture ? 'future' : ''
+                      isFuture ? 'future' : '',
+                      isGoldWeek ? 'gold-week' : ''
                     ].filter(Boolean).join(' ');
                     return (
-                      <button
-                        key={key}
-                        className={classes}
-                        onClick={() => selectDay(key)}
-                        aria-label={`${date.getDate()} ${MONTH_NAMES[date.getMonth()]}${hasWorkout ? ', есть тренировка' : ''}`}
-                      >
+                      <button key={key} className={classes} onClick={() => selectDay(key)} aria-label={`${date.getDate()} ${MONTH_NAMES[date.getMonth()]}`}>
                         <span className="calendar-day-num">{date.getDate()}</span>
                       </button>
                     );
                   })}
                 </div>
               </div>
-
               <div className="calendar-metrics">
-                <div className="metric">
-                  <span className="metric-label">ТРЕНИРОВОК</span>
-                  <strong className="metric-value">{monthWorkouts.length}</strong>
-                  <small className="metric-note">за месяц</small>
-                </div>
-                <div className="metric">
-                  <span className="metric-label">ОБЪЁМ</span>
-                  <strong className="metric-value">{fmt(monthVolume)}</strong>
-                  <small className="metric-note">кг</small>
-                </div>
-                <div className="metric">
-                  <span className="metric-label">XP</span>
-                  <strong className="metric-value">{monthXp}</strong>
-                  <small className="metric-note">за месяц</small>
-                </div>
+                <div className="metric"><span className="metric-label">ТРЕНИРОВОК</span><strong className="metric-value">{monthWorkouts.length}</strong><small className="metric-note">за месяц</small></div>
+                <div className="metric"><span className="metric-label">ОБЪЁМ</span><strong className="metric-value">{fmt(monthVolume)}</strong><small className="metric-note">кг</small></div>
+                <div className="metric"><span className="metric-label">XP</span><strong className="metric-value">{monthXp}</strong><small className="metric-note">за месяц</small></div>
               </div>
-
               {selectedDay && (
                 <div className="calendar-day-details">
-                  <div className="calendar-day-title">
-                    {new Date(selectedDay + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}
-                    {selectedDay === todayKey && <span className="calendar-day-badge">сегодня</span>}
-                  </div>
+                  <div className="calendar-day-title">{new Date(selectedDay + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}{selectedDay === todayKey && <span className="calendar-day-badge">сегодня</span>}</div>
                   {(workoutsByDay[selectedDay]?.length || 0) === 0 ? (
-                    <div className="calendar-day-empty">Нет тренировок в этот день</div>
-                  ) : (
-                    workoutsByDay[selectedDay].map(w => (
-                      <div className="calendar-workout" key={w.id}>
-                        <div className="calendar-workout-top">
-                          <div>
-                            <b>{w.name}</b>
-                            <small>{localTime(w.startedAt)}–{localTime(w.endedAt)} · {formatDuration(w.startedAt, w.endedAt)}</small>
-                          </div>
-                          <button
-                            className="icon-button subtle"
-                            aria-label="Удалить тренировку"
-                            onClick={() => deleteWorkout(w.id)}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                        <div className="calendar-workout-meta">
-                          <span>{w.exercises.length} упр.</span>
-                          <span>·</span>
-                          <span>{setCount(w)} подходов</span>
-                          <span>·</span>
-                          <span>{fmt(volume(w))} кг</span>
-                          <strong>+{w.earnedXp} XP</strong>
-                        </div>
-                        <button className="calendar-workout-repeat" onClick={() => startFromWorkout(w)}>
-                          <RefreshCw size={14} /> Повторить
-                        </button>
-                      </div>
-                    ))
-                  )}
+                    <div className="calendar-day-empty">Нет тренировок</div>
+                  ) : (workoutsByDay[selectedDay].map(w => (
+                    <div className="calendar-workout" key={w.id}>
+                      <div className="calendar-workout-top"><div><b>{w.name}</b><small>{localTime(w.startedAt)}–{localTime(w.endedAt)} · {formatDuration(w.startedAt, w.endedAt)}</small></div><button className="icon-button subtle" aria-label="Уд." onClick={() => deleteWorkout(w.id)}><Trash2 size={14} /></button></div>
+                      <div className="calendar-workout-meta"><span>{w.exercises.length} упр.</span><span>·</span><span>{setCount(w)} подходов</span><span>·</span><span>{fmt(volume(w))} кг</span><strong>+{w.earnedXp} XP</strong></div>
+                      <button className="calendar-workout-repeat" onClick={() => startFromWorkout(w)}><RefreshCw size={14} /> Повторить</button>
+                    </div>
+                  )))}
                 </div>
               )}
-
-              {!selectedDay && (
-                <div className="calendar-hint">Выбери день в календаре, чтобы увидеть тренировки.</div>
-              )}
-
+              {!selectedDay && (<div className="calendar-hint">Выбери день, чтобы увидеть тренировки.</div>)}
               <div className="muscle-stats">
                 <div className="muscle-stats-title">Мышцы за 30 дней</div>
-                {muscleStatsSorted.length === 0 ? (
-                  <div className="muscle-stats-empty">Нет данных за последние 30 дней</div>
-                ) : (
-                  muscleStatsSorted.map(([cat, count]) => (
-                    <div className="muscle-stat-row" key={cat}>
-                      <div className="muscle-stat-label">{cat}</div>
-                      <div className="muscle-stat-track">
-                        <div
-                          className="muscle-stat-fill"
-                          style={{ width: `${(count / maxMuscleValue) * 100}%` }}
-                        />
-                      </div>
-                      <div className="muscle-stat-count">{count}</div>
-                    </div>
-                  ))
-                )}
+                {muscleStatsSorted.length === 0 ? (<div className="muscle-stats-empty">Нет данных</div>) : (muscleStatsSorted.map(([cat, count]) => (
+                  <div className="muscle-stat-row" key={cat}>
+                    <div className="muscle-stat-label">{cat}</div>
+                    <div className="muscle-stat-track"><div className="muscle-stat-fill" style={{ width: `${(count / maxMuscleValue) * 100}%` }} /></div>
+                    <div className="muscle-stat-count">{count}</div>
+                  </div>
+                )))}
               </div>
-
-              {state.workouts.length > 0 && (
-                <button className="text-danger clear-history-bottom" onClick={clearHistory}>Очистить всю историю</button>
-              )}
+              {state.workouts.length > 0 && (<button className="text-danger clear-history-bottom" onClick={clearHistory}>Очистить историю</button>)}
             </>
           )}
         </section>}
@@ -1463,8 +1140,7 @@ export default function App() {
         {tab === 'quest' && <section>
           <p className="eyebrow">ПРОГРЕСС И НАГРАДЫ</p>
           <h1>Награды.</h1>
-          <p className="intro">Достижения открываются автоматически по мере тренировок.</p>
-
+          <p className="intro">Достижения открываются автоматически. Тренировки от 30 минут идут в зачёт.</p>
           <div className="quest-card">
             <div className="quest-icon"><Trophy size={28} /></div>
             <p className="eyebrow">ТВОЙ РАНГ</p>
@@ -1473,26 +1149,13 @@ export default function App() {
             <div className="progress-track"><span style={{ width: `${(xp % 250) / 2.5}%` }} /></div>
             <p className="quest-note">{state.workouts.length === 0 ? 'Первая тренировка откроет путь.' : `Тренировок завершено: ${state.workouts.length}.`}</p>
           </div>
-
           <SectionTitle title="Достижения" />
           <div className="achievements-grid">
-            {[
-              { id: 'first', icon: Award, title: 'Первый шаг', desc: 'Заверши тренировку', unlocked: state.workouts.length >= 1 },
-              { id: 'five', icon: Star, title: 'Пятёрка', desc: '5 тренировок', unlocked: state.workouts.length >= 5 },
-              { id: 'ten', icon: Star, title: 'Десятка', desc: '10 тренировок', unlocked: state.workouts.length >= 10 },
-              { id: 'twentyfive', icon: Trophy, title: 'Четверть сотни', desc: '25 тренировок', unlocked: state.workouts.length >= 25 },
-              { id: 'fifty', icon: Trophy, title: 'Полтинник', desc: '50 тренировок', unlocked: state.workouts.length >= 50 },
-              { id: 'streak3', icon: Zap, title: 'На волне', desc: 'Серия 3 дня', unlocked: streak >= 3 },
-              { id: 'streak7', icon: Zap, title: 'Неделя силы', desc: 'Серия 7 дней', unlocked: streak >= 7 },
-              { id: 'lvl5', icon: Target, title: 'Пятый уровень', desc: 'Достигни ур. 5', unlocked: level >= 5 },
-              { id: 'lvl10', icon: Target, title: 'Десятый уровень', desc: 'Достигни ур. 10', unlocked: level >= 10 },
-              { id: 'vol10k', icon: Dumbbell, title: 'Первая тонна', desc: '10 000 кг объёма', unlocked: state.workouts.reduce((n, w) => n + volume(w), 0) >= 10000 },
-              { id: 'vol50k', icon: Dumbbell, title: 'Пять тонн', desc: '50 000 кг объёма', unlocked: state.workouts.reduce((n, w) => n + volume(w), 0) >= 50000 },
-              { id: 'sets100', icon: Check, title: 'Сто подходов', desc: '100 выполненных подходов', unlocked: state.workouts.reduce((n, w) => n + setCount(w), 0) >= 100 }
-            ].map(a => {
+            {customAchievements.map(a => {
               const Icon = a.icon;
+              const unlocked = Boolean(state.unlockedAchievements[a.id]);
               return (
-                <div key={a.id} className={`achievement ${a.unlocked ? 'unlocked' : 'locked'}`}>
+                <div key={a.id} className={`achievement ${unlocked ? 'unlocked' : 'locked'}`}>
                   <div className="achievement-icon"><Icon size={22} /></div>
                   <b>{a.title}</b>
                   <small>{a.desc}</small>
@@ -1505,259 +1168,88 @@ export default function App() {
         {tab === 'profile' && <section>
           <p className="eyebrow">ТВОИ ДАННЫЕ</p>
           <h1>Профиль.</h1>
-
-                    <div className="profile-hero">
+          <div className="profile-hero">
             <label className="profile-avatar profile-avatar-editable">
-              {state.profile.avatar
-                ? <img src={state.profile.avatar} alt="Аватар" />
-                : (state.profile.name.trim()[0] || 'А').toLocaleUpperCase('ru-RU')}
+              {state.profile.avatar ? <img src={state.profile.avatar} alt="Аватар" /> : (state.profile.name.trim()[0] || 'А').toLocaleUpperCase('ru-RU')}
               <span className="profile-avatar-badge"><Camera size={12} /></span>
-              <input
-                type="file"
-                accept="image/*"
-                hidden
-                onChange={e => {
-                  handleAvatarUpload(e.target.files?.[0]);
-                  e.target.value = '';
-                }}
-              />
+              <input type="file" accept="image/*" hidden onChange={e => { handleAvatarUpload(e.target.files?.[0]); e.target.value = ''; }} />
             </label>
             <div className="profile-hero-info">
               <b>{state.profile.name || 'Атлет'}</b>
               <small>{state.profile.bodyWeight ? `${state.profile.bodyWeight} кг` : 'Вес не указан'}</small>
-              {state.profile.avatar && (
-                <button className="profile-avatar-remove" onClick={removeAvatar}>Удалить фото</button>
-              )}
+              {state.profile.avatar && (<button className="profile-avatar-remove" onClick={removeAvatar}>Удалить фото</button>)}
             </div>
           </div>
-
           <div className="settings-section">
             <p className="settings-header">Личные данные</p>
             <div className="settings-group">
-              <label className="settings-row-input">
-                <span>Имя</span>
-                <input
-                  className="settings-input"
-                  value={state.profile.name}
-                  onChange={e => updateProfile(e.target.value, state.profile.bodyWeight)}
-                  onBlur={() => updateProfile(state.profile.name.trim() || 'Атлет', state.profile.bodyWeight)}
-                  maxLength={40}
-                />
-              </label>
-              <label className="settings-row-input">
-                <span>Вес (кг)</span>
-                <input
-                  className="settings-input"
-                  type="number"
-                  inputMode="decimal"
-                  min="0"
-                  step="0.1"
-                  value={state.profile.bodyWeight}
-                  onChange={e => updateProfile(state.profile.name, e.target.value)}
-                  placeholder="—"
-                />
-              </label>
+              <label className="settings-row-input"><span>Имя</span><input className="settings-input" value={state.profile.name} onChange={e => updateProfile(e.target.value, state.profile.bodyWeight)} onBlur={() => updateProfile(state.profile.name.trim() || 'Атлет', state.profile.bodyWeight)} maxLength={40} /></label>
+              <label className="settings-row-input"><span>Вес (кг)</span><input className="settings-input" type="number" inputMode="decimal" min="0" step="0.1" value={state.profile.bodyWeight} onChange={e => updateProfile(state.profile.name, e.target.value)} placeholder="—" /></label>
             </div>
           </div>
-                    <div className="settings-section">
+          <div className="settings-section">
             <p className="settings-header">Цели на главной</p>
             <div className="settings-group">
               <div className="ring-setting">
                 <div className="ring-setting-color" style={{ background: '#ff6482' }} />
                 <div className="ring-setting-body">
-                  <select
-                    className="ring-setting-select"
-                    value={state.settings.ring1.metric}
-                    onChange={e => updateRingMetric('ring1', e.target.value as RingMetric)}
-                  >
-                    {RING_METRICS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-                  </select>
-                  <div className="ring-setting-goal">
-                    <span>Цель:</span>
-                    <input
-                      type="number"
-                      className="ring-setting-input"
-                      value={state.settings.ring1.goal}
-                      onChange={e => updateRingGoal('ring1', Number(e.target.value))}
-                      min={1}
-                    />
-                    <span className="ring-setting-unit">{ring1Info.unit}</span>
-                  </div>
+                  <select className="ring-setting-select" value={state.settings.ring1.metric} onChange={e => updateRingMetric('ring1', e.target.value as RingMetric)}>{RING_METRICS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}</select>
+                  <div className="ring-setting-goal"><span>Цель:</span><input type="number" className="ring-setting-input" value={state.settings.ring1.goal} onChange={e => updateRingGoal('ring1', Number(e.target.value))} min={1} /><span className="ring-setting-unit">{ring1Info.unit}</span></div>
                 </div>
               </div>
               <div className="ring-setting">
                 <div className="ring-setting-color" style={{ background: '#d0f477' }} />
                 <div className="ring-setting-body">
-                  <select
-                    className="ring-setting-select"
-                    value={state.settings.ring2.metric}
-                    onChange={e => updateRingMetric('ring2', e.target.value as RingMetric)}
-                  >
-                    {RING_METRICS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-                  </select>
-                  <div className="ring-setting-goal">
-                    <span>Цель:</span>
-                    <input
-                      type="number"
-                      className="ring-setting-input"
-                      value={state.settings.ring2.goal}
-                      onChange={e => updateRingGoal('ring2', Number(e.target.value))}
-                      min={1}
-                    />
-                    <span className="ring-setting-unit">{ring2Info.unit}</span>
-                  </div>
+                  <select className="ring-setting-select" value={state.settings.ring2.metric} onChange={e => updateRingMetric('ring2', e.target.value as RingMetric)}>{RING_METRICS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}</select>
+                  <div className="ring-setting-goal"><span>Цель:</span><input type="number" className="ring-setting-input" value={state.settings.ring2.goal} onChange={e => updateRingGoal('ring2', Number(e.target.value))} min={1} /><span className="ring-setting-unit">{ring2Info.unit}</span></div>
                 </div>
               </div>
             </div>
             <p className="sync-hint" style={{ marginTop: 8 }}>Третье кольцо — уровень, оно не настраивается.</p>
           </div>
-
           <div className="settings-section">
             <p className="settings-header">Аккаунт</p>
             <div className="settings-group">
               <div className="setting-row">
-                <div className="setting-icon">
-                  {isRegistered ? <ShieldCheck size={17} /> : <CircleUserRound size={17} />}
-                </div>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <b>
-                    {isRegistered ? (user?.email || 'Аккаунт создан') : 'Не привязан'}
-                  </b>
-                  <small>
-                    {isRegistered
-                      ? 'Данные сохраняются в облако'
-                      : 'Прогресс только на этом устройстве'}
-                  </small>
-                </div>
+                <div className="setting-icon">{isRegistered ? <ShieldCheck size={17} /> : <CircleUserRound size={17} />}</div>
+                <div style={{ minWidth: 0, flex: 1 }}><b>{isRegistered ? (user?.email || 'Аккаунт создан') : 'Не привязан'}</b><small>{isRegistered ? 'Данные сохраняются в облако' : 'Прогресс только на устройстве'}</small></div>
                 <span className={`status-dot ${isRegistered ? 'status-active' : 'status-pending'}`} />
               </div>
-
-              {!isRegistered && (
-                <>
-                  <button className="settings-action" onClick={() => openEmailAuth('signup')}>
-                    <Cloud size={17} />
-                    <span><b>Создать аккаунт</b><small>Email и пароль — чтобы прогресс не потерялся</small></span>
-                  </button>
-                  <button className="settings-action" onClick={() => openEmailAuth('signin')}>
-                    <RefreshCw size={17} />
-                    <span><b>Войти в существующий</b><small>Если уже создавал аккаунт на другом устройстве</small></span>
-                  </button>
-                </>
-              )}
-
-              {isRegistered && (
-                <>
-                  <button className="settings-action" onClick={() => openEmailAuth('reset')}>
-                    <Save size={17} />
-                    <span><b>Сбросить пароль</b><small>Письмо на {user?.email || 'твой email'}</small></span>
-                  </button>
-                  <button className="settings-action" onClick={handleLogout}>
-                    <X size={17} />
-                    <span><b>Выйти из аккаунта</b><small>Прогресс останется в облаке</small></span>
-                  </button>
-                </>
-              )}
+              {!isRegistered && (<><button className="settings-action" onClick={() => openEmailAuth('signup')}><Cloud size={17} /><span><b>Создать аккаунт</b><small>Email и пароль</small></span></button><button className="settings-action" onClick={() => openEmailAuth('signin')}><RefreshCw size={17} /><span><b>Войти</b><small>Если уже есть</small></span></button></>)}
+              {isRegistered && (<><button className="settings-action" onClick={() => openEmailAuth('reset')}><Save size={17} /><span><b>Сбросить пароль</b><small>Письмо на {user?.email}</small></span></button><button className="settings-action" onClick={handleLogout}><X size={17} /><span><b>Выйти</b><small>Прогресс останется</small></span></button></>)}
             </div>
-
-            {!isRegistered && (
-              <div className="sync-warning">
-                <p>Без аккаунта прогресс хранится только на этом устройстве. Удалишь приложение — данные пропадут.</p>
-              </div>
-            )}
+            {!isRegistered && (<div className="sync-warning"><p>Без аккаунта прогресс хранится только здесь.</p></div>)}
           </div>
-
           <div className="settings-section">
             <p className="settings-header">Синхронизация</p>
             <div className="settings-group">
-              <div className="setting-row">
-                <div className="setting-icon"><ShieldCheck size={17} /></div>
-                <div>
-                  <b>Локальное сохранение</b>
-                  <small>Автосохранение после каждого действия</small>
-                </div>
-                <span className="status-dot status-active" title="Активно" />
-              </div>
-
+              <div className="setting-row"><div className="setting-icon"><ShieldCheck size={17} /></div><div><b>Локальное сохранение</b><small>Автосохранение</small></div><span className="status-dot status-active" /></div>
               {firebaseConfigured ? (
                 <div className="setting-row">
                   <div className="setting-icon"><Cloud size={17} /></div>
-                  <div>
-                    <b>Облачная синхронизация</b>
-                    <small>
-                      {!isRegistered
-                        ? 'Только на этом устройстве'
-                        : `Через аккаунт ${user?.email || ''}`}
-                    </small>
-                    {isRegistered && (
-                      <small className="sync-time">
-                        {isSyncing
-                          ? 'Синхронизация…'
-                          : lastSyncedAt
-                            ? `Сохранено: ${formatSyncTime(lastSyncedAt)}`
-                            : 'Ещё не синхронизировано'}
-                      </small>
-                    )}
-                    {syncError && <small className="sync-error">Ошибка: {syncError}</small>}
-                  </div>
+                  <div><b>Облачная синхронизация</b><small>{!isRegistered ? 'Только на устройстве' : `Аккаунт ${user?.email || ''}`}</small>{isRegistered && (<small className="sync-time">{isSyncing ? 'Синхронизация…' : lastSyncedAt ? `Сохранено: ${formatSyncTime(lastSyncedAt)}` : 'Ещё не синхронизировано'}</small>)}{syncError && <small className="sync-error">Ошибка: {syncError}</small>}</div>
                   <span className={`status-dot ${isSyncing ? 'status-pending' : isRegistered ? 'status-active' : ''}`} />
                 </div>
-              ) : (
-                <div className="setting-row">
-                  <div className="setting-icon"><Cloud size={17} /></div>
-                  <div>
-                    <b>Облачная синхронизация</b>
-                    <small>Firebase не настроен.</small>
-                  </div>
-                  <span className="status-dot" />
-                </div>
-              )}
+              ) : (<div className="setting-row"><div className="setting-icon"><Cloud size={17} /></div><div><b>Облако</b><small>Не настроено</small></div><span className="status-dot" /></div>)}
             </div>
-
-            {isRegistered && (
-              <>
-                <p className="sync-hint">Изменения отправляются в облако через 2 секунды после действия.</p>
-                <button className="button button-secondary full-width" onClick={forceSync} disabled={isSyncing} style={{ marginTop: 8 }}>
-                  <Cloud size={17} /> {isSyncing ? 'Синхронизация…' : 'Синхронизировать сейчас'}
-                </button>
-              </>
-            )}
+            {isRegistered && (<><p className="sync-hint">Отправка через 2 секунды.</p><button className="button button-secondary full-width" onClick={forceSync} disabled={isSyncing} style={{ marginTop: 8 }}><Cloud size={17} /> {isSyncing ? 'Синхронизация…' : 'Синхронизировать сейчас'}</button></>)}
           </div>
-
           <div className="settings-section">
             <p className="settings-header">Резервные копии</p>
             <div className="settings-group">
-              <button className="settings-action" onClick={exportData}>
-                <FileDown size={17} />
-                <span><b>Экспортировать JSON</b><small>Копия всех данных на диск</small></span>
-              </button>
-              <label className="settings-action">
-                <Save size={17} />
-                <span><b>Импортировать JSON</b><small>Восстановить из файла</small></span>
-                <input type="file" accept=".json,application/json" hidden onChange={e => importData(e.target.files?.[0])} />
-              </label>
+              <button className="settings-action" onClick={exportData}><FileDown size={17} /><span><b>Экспортировать JSON</b><small>Копия на диск</small></span></button>
+              <label className="settings-action"><Save size={17} /><span><b>Импортировать JSON</b><small>Из файла</small></span><input type="file" accept=".json,application/json" hidden onChange={e => importData(e.target.files?.[0])} /></label>
             </div>
           </div>
-
-          <div className="notice">Резервная копия JSON — независимая страховка. Облако синхронизирует автоматически, но локальный файл можно открыть и восстановить без интернета.</div>
+          <div className="notice">Резервная копия JSON — страховка. Облако синхронизирует автоматически.</div>
         </section>}
       </main>
 
-      <nav className="tabbar" aria-label="Основная навигация">
+      <nav className="tabbar" aria-label="Навигация">
         {navItems.map(item => {
           const Icon = item.icon;
           const isActive = tab === item.id;
-          return <button
-            key={item.id}
-            className={`tab ${isActive ? 'active' : ''}`}
-            onClick={() => {
-              if (item.id === 'programs' && tab === 'programs' && programsView === 'library') {
-                setProgramsView('list');
-                setLibraryTab('browse');
-                return;
-              }
-              setTab(item.id);
-            }}
-          >
+          return <button key={item.id} className={`tab ${isActive ? 'active' : ''}`} onClick={() => { if (item.id === 'programs' && tab === 'programs' && programsView === 'library') { setProgramsView('list'); setLibraryTab('browse'); return; } setTab(item.id); }}>
             <Icon size={19} strokeWidth={isActive ? 2.4 : 1.8} /><span>{item.label}</span>
           </button>;
         })}
@@ -1766,43 +1258,27 @@ export default function App() {
       {pickerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setPickerOpen(false); }}>
         <section className="picker-modal" role="dialog" aria-modal="true" aria-labelledby="picker-title">
           <div className="modal-head"><div><p className="eyebrow">БИБЛИОТЕКА</p><h2 id="picker-title">Добавить упражнение</h2></div><button className="icon-button" onClick={() => setPickerOpen(false)} aria-label="Закрыть"><X size={20} /></button></div>
-          <input className="field" autoFocus placeholder="Поиск или новое название" value={pickerQuery} onChange={e => setPickerQuery(e.target.value)} />
+          <input className="field" autoFocus placeholder="Поиск или новое" value={pickerQuery} onChange={e => setPickerQuery(e.target.value)} />
           {pickerQuery.trim() && !filteredExercises.some(e => e.name.toLowerCase() === pickerQuery.toLowerCase().trim()) && (
             <div className="picker-add-custom">
               <p className="picker-add-label">Нет в библиотеке? Добавить «{pickerQuery.trim()}»</p>
-              <CategorySelect
-                value={pickerNewCategory}
-                onChange={(v) => { setPickerNewCategory(v); if (v) ensureCategoryRegistered(v); }}
-                categories={allCategories}
-              />
+              <CategorySelect value={pickerNewCategory} onChange={(v) => { setPickerNewCategory(v); if (v) ensureCategoryRegistered(v); }} categories={allCategories} />
               <button className="picker-add-button" onClick={() => addCustomInPicker(pickerQuery)}><Plus size={16} /> Добавить</button>
             </div>
           )}
-          <div className="picker-list">{filteredExercises.map(e => <button key={e.id} className="picker-row" onClick={() => addExerciseToWorkout(e)}><span><b>{e.name}</b><small>{normalizeMuscle(e.muscle) || 'Без категории'} · {e.equipment}</small></span><Plus size={18} /></button>)}{filteredExercises.length === 0 && <Empty title="Ничего не найдено" text="Введи название — можно добавить как своё упражнение." />}</div>
+          <div className="picker-list">{filteredExercises.map(e => <button key={e.id} className="picker-row" onClick={() => addExerciseToWorkout(e)}><span><b>{e.name}</b><small>{normalizeMuscle(e.muscle) || 'Без категории'} · {e.equipment}</small></span><Plus size={18} /></button>)}{filteredExercises.length === 0 && <Empty title="Ничего не найдено" text="Введи название — можно добавить как своё." />}</div>
         </section>
       </div>}
 
       {historyPickerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setHistoryPickerOpen(false); }}>
         <section className="picker-modal" role="dialog" aria-modal="true" aria-labelledby="history-title">
-          <div className="modal-head">
-            <div>
-              <p className="eyebrow">ИСТОРИЯ</p>
-              <h2 id="history-title">Повторить тренировку</h2>
-            </div>
-            <button className="icon-button" onClick={() => setHistoryPickerOpen(false)} aria-label="Закрыть">
-              <X size={20} />
-            </button>
-          </div>
-          <p className="picker-hint">Упражнения и веса скопируются. Галочки и заметки — нет.</p>
+          <div className="modal-head"><div><p className="eyebrow">ИСТОРИЯ</p><h2 id="history-title">Повторить тренировку</h2></div><button className="icon-button" onClick={() => setHistoryPickerOpen(false)} aria-label="Закрыть"><X size={20} /></button></div>
+          <p className="picker-hint">Упражнения и веса скопируются.</p>
           <div className="picker-list">
-            {state.workouts.length === 0 && <Empty title="История пуста" text="Заверши тренировку, чтобы она появилась здесь." />}
+            {state.workouts.length === 0 && <Empty title="Пусто" text="Заверши тренировку." />}
             {state.workouts.map(w => (
               <button key={w.id} className="picker-row" onClick={() => { setHistoryPickerOpen(false); startFromWorkout(w); }}>
-                <span>
-                  <b>{w.name}</b>
-                  <small>{localDate(w.endedAt)} · {w.exercises.length} упр. · {setCount(w)} подходов</small>
-                </span>
-                <RefreshCw size={16} />
+                <span><b>{w.name}</b><small>{localDate(w.endedAt)} · {w.exercises.length} упр. · {setCount(w)} подходов</small></span><RefreshCw size={16} />
               </button>
             ))}
           </div>
@@ -1812,83 +1288,34 @@ export default function App() {
       {editingExercise && (
         <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setEditingExercise(null); }}>
           <section className="picker-modal" role="dialog" aria-modal="true" aria-labelledby="edit-ex-title">
-            <div className="modal-head">
-              <div>
-                <p className="eyebrow">РЕДАКТИРОВАНИЕ</p>
-                <h2 id="edit-ex-title">Упражнение</h2>
-              </div>
-              <button className="icon-button" onClick={() => setEditingExercise(null)} aria-label="Закрыть">
-                <X size={20} />
-              </button>
-            </div>
-            <label className="field-label">Название
-              <input
-                className="field"
-                value={editingExercise.name}
-                onChange={e => setEditingExercise({ ...editingExercise, name: e.target.value })}
-                maxLength={80}
-              />
-            </label>
-            <label className="field-label">Категория
-              <CategorySelect
-                value={editingExercise.muscle}
-                onChange={(v) => { setEditingExercise({ ...editingExercise, muscle: v }); if (v) ensureCategoryRegistered(v); }}
-                categories={allCategories}
-              />
-            </label>
-            <button className="button button-primary full-width" onClick={saveEditedExercise}>
-              <Save size={16} /> Сохранить
-            </button>
+            <div className="modal-head"><div><p className="eyebrow">РЕДАКТИРОВАНИЕ</p><h2 id="edit-ex-title">Упражнение</h2></div><button className="icon-button" onClick={() => setEditingExercise(null)} aria-label="Закрыть"><X size={20} /></button></div>
+            <label className="field-label">Название<input className="field" value={editingExercise.name} onChange={e => setEditingExercise({ ...editingExercise, name: e.target.value })} maxLength={80} /></label>
+            <label className="field-label">Категория<CategorySelect value={editingExercise.muscle} onChange={(v) => { setEditingExercise({ ...editingExercise, muscle: v }); if (v) ensureCategoryRegistered(v); }} categories={allCategories} /></label>
+            <button className="button button-primary full-width" onClick={saveEditedExercise}><Save size={16} /> Сохранить</button>
           </section>
         </div>
       )}
 
-                  {graphExercise && (() => {
+      {graphExercise && (() => {
         const stats = getExerciseStats(graphExercise.id);
         return (
           <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setGraphExercise(null); }}>
             <section className="picker-modal graph-modal" role="dialog" aria-modal="true" aria-labelledby="graph-title">
               <div className="modal-head">
-                <div style={{ minWidth: 0 }}>
-                  <p className="eyebrow">ПРОГРЕСС</p>
-                  <h2 id="graph-title" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{graphExercise.name}</h2>
-                </div>
-                <button className="icon-button" onClick={() => setGraphExercise(null)} aria-label="Закрыть">
-                  <X size={20} />
-                </button>
+                <div style={{ minWidth: 0 }}><p className="eyebrow">ПРОГРЕСС</p><h2 id="graph-title" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{graphExercise.name}</h2></div>
+                <button className="icon-button" onClick={() => setGraphExercise(null)} aria-label="Закрыть"><X size={20} /></button>
               </div>
-
               {stats.bestWeight > 0 ? (
                 <>
                   <div className="chart-stats">
-                    <div className="chart-stat">
-                      <span className="chart-stat-label">Лучший вес</span>
-                      <span className="chart-stat-value">{stats.bestWeight} кг</span>
-                      {stats.bestDate && <span className="chart-stat-date">{localDate(stats.bestDate)}</span>}
-                    </div>
-                    <div className="chart-stat">
-                      <span className="chart-stat-label">Повторения</span>
-                      <span className="chart-stat-value">{stats.bestReps} раз</span>
-                      <span className="chart-stat-date">с этим весом</span>
-                    </div>
-                    <div className="chart-stat">
-                      <span className="chart-stat-label">Максимум</span>
-                      <span className="chart-stat-value">≈ {stats.best1RM} кг</span>
-                      <span className="chart-stat-date">на 1 раз</span>
-                    </div>
+                    <div className="chart-stat"><span className="chart-stat-label">Лучший вес</span><span className="chart-stat-value">{stats.bestWeight} кг</span>{stats.bestDate && <span className="chart-stat-date">{localDate(stats.bestDate)}</span>}</div>
+                    <div className="chart-stat"><span className="chart-stat-label">Повторения</span><span className="chart-stat-value">{stats.bestReps} раз</span><span className="chart-stat-date">с этим весом</span></div>
+                    <div className="chart-stat"><span className="chart-stat-label">Максимум</span><span className="chart-stat-value">≈ {stats.best1RM} кг</span><span className="chart-stat-date">на 1 раз</span></div>
                   </div>
-
-                  <div className="graph-chart-wrap">
-                    <ProgressChart points={stats.points} />
-                  </div>
-
-                  <p className="chart-caption">
-                    Максимальный вес за тренировку · {stats.totalWorkouts} {stats.totalWorkouts === 1 ? 'тренировка' : stats.totalWorkouts < 5 ? 'тренировки' : 'тренировок'}
-                  </p>
+                  <div className="graph-chart-wrap"><ProgressChart points={stats.points} /></div>
+                  <p className="chart-caption">Максимальный вес за тренировку · {stats.totalWorkouts} {stats.totalWorkouts === 1 ? 'тренировка' : stats.totalWorkouts < 5 ? 'тренировки' : 'тренировок'}</p>
                 </>
-              ) : (
-                <Empty title="Нет данных с весом" text="Отметь выполненные подходы с ненулевым весом, чтобы увидеть прогресс." />
-              )}
+              ) : (<Empty title="Нет данных" text="Отметь подходы с ненулевым весом." />)}
             </section>
           </div>
         );
@@ -1897,158 +1324,49 @@ export default function App() {
       {emailAuthOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget && !emailAuthLoading) setEmailAuthOpen(false); }}>
           <section className="picker-modal" role="dialog" aria-modal="true" aria-labelledby="email-auth-title">
-            <div className="modal-head">
-              <div>
-                <p className="eyebrow">АККАУНТ</p>
-                <h2 id="email-auth-title">
-                  {emailAuthMode === 'signup' ? 'Создать аккаунт' : emailAuthMode === 'signin' ? 'Войти' : 'Сбросить пароль'}
-                </h2>
-              </div>
-              <button className="icon-button" onClick={() => setEmailAuthOpen(false)} aria-label="Закрыть" disabled={emailAuthLoading}>
-                <X size={20} />
-              </button>
-            </div>
-
-            <p className="picker-hint">
-              {emailAuthMode === 'signup' && 'Привяжем email к текущему прогрессу. Дальше сможешь войти с другого устройства или после переустановки.'}
-              {emailAuthMode === 'signin' && 'Введи email и пароль. Текущие данные на этом устройстве заменятся данными из облака.'}
-              {emailAuthMode === 'reset' && 'Отправим ссылку для сброса пароля на email.'}
-            </p>
-
-            <input
-              className="field"
-              type="email"
-              inputMode="email"
-              autoComplete="email"
-              placeholder="Email"
-              value={emailValue}
-              onChange={e => setEmailValue(e.target.value)}
-              autoFocus
-              disabled={emailAuthLoading}
-            />
-
-            {emailAuthMode !== 'reset' && (
-              <input
-                className="field"
-                type="password"
-                autoComplete={emailAuthMode === 'signup' ? 'new-password' : 'current-password'}
-                placeholder={emailAuthMode === 'signup' ? 'Пароль (минимум 6 символов)' : 'Пароль'}
-                value={passwordValue}
-                onChange={e => setPasswordValue(e.target.value)}
-                disabled={emailAuthLoading}
-              />
-            )}
-
+            <div className="modal-head"><div><p className="eyebrow">АККАУНТ</p><h2 id="email-auth-title">{emailAuthMode === 'signup' ? 'Создать аккаунт' : emailAuthMode === 'signin' ? 'Войти' : 'Сбросить пароль'}</h2></div><button className="icon-button" onClick={() => setEmailAuthOpen(false)} aria-label="Закрыть" disabled={emailAuthLoading}><X size={20} /></button></div>
+            <p className="picker-hint">{emailAuthMode === 'signup' && 'Привяжем email к текущему прогрессу.'}{emailAuthMode === 'signin' && 'Введи email и пароль. Текущие данные заменятся.'}{emailAuthMode === 'reset' && 'Отправим ссылку для сброса.'}</p>
+            <input className="field" type="email" inputMode="email" autoComplete="email" placeholder="Email" value={emailValue} onChange={e => setEmailValue(e.target.value)} autoFocus disabled={emailAuthLoading} />
+            {emailAuthMode !== 'reset' && (<input className="field" type="password" autoComplete={emailAuthMode === 'signup' ? 'new-password' : 'current-password'} placeholder={emailAuthMode === 'signup' ? 'Пароль (от 6 символов)' : 'Пароль'} value={passwordValue} onChange={e => setPasswordValue(e.target.value)} disabled={emailAuthLoading} />)}
             {emailAuthError && <div className="email-auth-error">{emailAuthError}</div>}
-
-            <button
-              className="button button-primary full-width"
-              onClick={handleEmailAuth}
-              disabled={emailAuthLoading || !emailValue.trim() || (emailAuthMode !== 'reset' && !passwordValue)}
-            >
-              {emailAuthLoading
-                ? 'Подожди…'
-                : emailAuthMode === 'signup' ? 'Создать аккаунт'
-                : emailAuthMode === 'signin' ? 'Войти'
-                : 'Отправить письмо'}
-            </button>
-
-            {emailAuthMode === 'signup' && (
-              <button className="text-link" onClick={() => openEmailAuth('signin')}>
-                Уже есть аккаунт? Войти
-              </button>
-            )}
-            {emailAuthMode === 'signin' && (
-              <>
-                <button className="text-link" onClick={() => openEmailAuth('signup')}>
-                  Нет аккаунта? Создать
-                </button>
-                <button className="text-link" onClick={() => openEmailAuth('reset')}>
-                  Забыли пароль?
-                </button>
-              </>
-            )}
-            {emailAuthMode === 'reset' && (
-              <button className="text-link" onClick={() => openEmailAuth('signin')}>
-                ← Назад к входу
-              </button>
-            )}
+            <button className="button button-primary full-width" onClick={handleEmailAuth} disabled={emailAuthLoading || !emailValue.trim() || (emailAuthMode !== 'reset' && !passwordValue)}>{emailAuthLoading ? 'Подожди…' : emailAuthMode === 'signup' ? 'Создать аккаунт' : emailAuthMode === 'signin' ? 'Войти' : 'Отправить письмо'}</button>
+            {emailAuthMode === 'signup' && (<button className="text-link" onClick={() => openEmailAuth('signin')}>Уже есть аккаунт? Войти</button>)}
+            {emailAuthMode === 'signin' && (<><button className="text-link" onClick={() => openEmailAuth('signup')}>Нет аккаунта? Создать</button><button className="text-link" onClick={() => openEmailAuth('reset')}>Забыли пароль?</button></>)}
+            {emailAuthMode === 'reset' && (<button className="text-link" onClick={() => openEmailAuth('signin')}>← Назад к входу</button>)}
           </section>
         </div>
       )}
 
       {finishing && <div className="finish-flash" />}
-      {xpPop !== null && (
-        <div className="xp-pop" role="status">
-          +{xpPop} XP
-        </div>
-      )}
-            {tempImage && (
+      {xpPop !== null && (<div className="xp-pop" role="status">+{xpPop} XP</div>)}
+      {tempImage && (
         <ImageCropper
           imageSrc={tempImage}
           onCancel={() => setTempImage(null)}
-          onCropComplete={(cropped) => {
-            setState(s => ({ ...s, profile: { ...s.profile, avatar: cropped } }));
-            setTempImage(null);
-            notify('Фото обновлено');
-          }}
+          onCropComplete={(cropped) => { setState(s => ({ ...s, profile: { ...s.profile, avatar: cropped } })); setTempImage(null); notify('Фото обновлено'); }}
         />
       )}
-
       {toast && <div className="toast" role="status">{toast}</div>}
     </div>
   );
 }
 
-function CategorySelect({
-  value,
-  onChange,
-  categories
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  categories: string[];
-}) {
+function CategorySelect({ value, onChange, categories }: { value: string; onChange: (v: string) => void; categories: string[]; }) {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
-
   if (creating) {
     return (
       <div className="category-create">
-        <input
-          className="field"
-          autoFocus
-          placeholder="Название новой категории"
-          value={newName}
-          onChange={e => setNewName(e.target.value)}
-          maxLength={40}
-        />
+        <input className="field" autoFocus placeholder="Название категории" value={newName} onChange={e => setNewName(e.target.value)} maxLength={40} />
         <div className="category-create-actions">
           <button className="button button-secondary" onClick={() => { setCreating(false); setNewName(''); }}>Отмена</button>
-          <button className="button button-primary" onClick={() => {
-            const v = newName.trim();
-            if (!v) return;
-            onChange(v);
-            setCreating(false);
-            setNewName('');
-          }}>Создать</button>
+          <button className="button button-primary" onClick={() => { const v = newName.trim(); if (!v) return; onChange(v); setCreating(false); setNewName(''); }}>Создать</button>
         </div>
       </div>
     );
   }
-
   return (
-    <select
-      className="field"
-      value={value}
-      onChange={e => {
-        if (e.target.value === '__new__') {
-          setCreating(true);
-        } else {
-          onChange(e.target.value);
-        }
-      }}
-    >
+    <select className="field" value={value} onChange={e => { if (e.target.value === '__new__') setCreating(true); else onChange(e.target.value); }}>
       <option value="">Без категории</option>
       {categories.map(c => <option key={c} value={c}>{c}</option>)}
       <option value="__new__">+ Создать категорию</option>
@@ -2068,7 +1386,8 @@ function Empty({ title, text }: { title: string; text: string }) {
 function WorkoutRow({ workout, onDelete }: { workout: Workout; onDelete: () => void }) {
   return <div className="workout-row"><div className="row-mark"><Check size={17} /></div><div className="row-content"><b>{workout.name}</b><small>{localDate(workout.endedAt)} · {workout.exercises.length} упражнений</small></div><strong>+{workout.earnedXp} XP</strong><button className="icon-button subtle" aria-label="Удалить тренировку" onClick={onDelete}><Trash2 size={15} /></button></div>;
 }
-function ActivityRings({ rings }: { rings: { percent: number; color: string }[] }) {
+
+function ActivityRings({ rings }: { rings: { percent: number; color: string; closed?: boolean }[] }) {
   const stroke = 13;
   const gap = 5;
   return (
@@ -2077,38 +1396,37 @@ function ActivityRings({ rings }: { rings: { percent: number; color: string }[] 
         const r = 82 - i * (stroke + gap);
         const c = 2 * Math.PI * r;
         const pct = Math.max(0, Math.min(1, ring.percent || 0));
+        const isClosed = ring.closed || pct >= 1;
         return (
-          <g key={i}>
+          <g key={i} className={isClosed ? 'ring-closed' : ''}>
             <circle cx="100" cy="100" r={r} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth={stroke} />
             <circle cx="100" cy="100" r={r} fill="none" stroke={ring.color} strokeWidth={stroke} strokeLinecap="round"
               strokeDasharray={c} strokeDashoffset={c * (1 - pct)}
-              transform="rotate(-90 100 100)" style={{ transition: 'stroke-dashoffset .6s ease' }} />
+              transform="rotate(-90 100 100)" style={{ transition: 'stroke-dashoffset .6s ease', filter: isClosed ? 'drop-shadow(0 0 8px rgba(208, 244, 119, 0.6))' : 'none' }} />
           </g>
         );
       })}
+      {/* Галочка в центре, если все кольца закрыты */}
+      {rings.every(r => r.closed || r.percent >= 1) && (
+        <g className="ring-check-center">
+          <circle cx="100" cy="100" r="28" fill="rgba(208, 244, 119, 0.15)" />
+          <path d="M85 100 L95 110 L115 90" fill="none" stroke="var(--lime)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+        </g>
+      )}
     </svg>
   );
 }
+
 function ProgressChart({ points }: { points: { date: number; value: number }[] }) {
-  if (points.length < 2) {
-    return <Empty title="Мало данных" text="Нужно минимум 2 тренировки с этим упражнением." />;
-  }
-  const W = 360;
-  const H = 240;
+  if (points.length < 2) return <Empty title="Мало данных" text="Нужно минимум 2 тренировки с этим упражнением." />;
+  const W = 360, H = 240;
   const pad = { top: 20, right: 16, bottom: 34, left: 52 };
-  const innerW = W - pad.left - pad.right;
-  const innerH = H - pad.top - pad.bottom;
+  const innerW = W - pad.left - pad.right, innerH = H - pad.top - pad.bottom;
   const values = points.map(p => p.value);
-  const minV = Math.min(...values);
-  const maxV = Math.max(...values);
+  const minV = Math.min(...values), maxV = Math.max(...values);
   const range = Math.max(1, maxV - minV);
   const xStep = innerW / (points.length - 1);
-  const coords = points.map((p, i) => ({
-    x: pad.left + i * xStep,
-    y: pad.top + innerH - ((p.value - minV) / range) * innerH,
-    value: p.value,
-    date: p.date
-  }));
+  const coords = points.map((p, i) => ({ x: pad.left + i * xStep, y: pad.top + innerH - ((p.value - minV) / range) * innerH, value: p.value, date: p.date }));
   const pathD = coords.map((c, i) => `${i === 0 ? 'M' : 'L'}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
   const areaD = `${pathD} L${coords[coords.length - 1].x.toFixed(1)},${(pad.top + innerH).toFixed(1)} L${coords[0].x.toFixed(1)},${(pad.top + innerH).toFixed(1)} Z`;
   const fmtShort = (ts: number) => new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' }).format(ts);
@@ -2116,12 +1434,7 @@ function ProgressChart({ points }: { points: { date: number; value: number }[] }
   return (
     <div className="progress-chart-wrap">
       <svg viewBox={`0 0 ${W} ${H}`} className="progress-chart" aria-hidden="true">
-        <defs>
-          <linearGradient id="chartAreaGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="rgb(208,244,119)" stopOpacity="0.35" />
-            <stop offset="100%" stopColor="rgb(208,244,119)" stopOpacity="0" />
-          </linearGradient>
-        </defs>
+        <defs><linearGradient id="chartAreaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="rgb(208,244,119)" stopOpacity="0.35" /><stop offset="100%" stopColor="rgb(208,244,119)" stopOpacity="0" /></linearGradient></defs>
         <text x={pad.left - 8} y={pad.top + 4} textAnchor="end" className="chart-label">{Math.round(maxV)} кг</text>
         <text x={pad.left - 8} y={pad.top + innerH} textAnchor="end" className="chart-label">{Math.round(minV)} кг</text>
         <line x1={pad.left} y1={pad.top} x2={pad.left} y2={pad.top + innerH} stroke="rgba(255,255,255,.08)" />
