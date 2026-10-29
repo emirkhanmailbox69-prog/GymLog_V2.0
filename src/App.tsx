@@ -850,16 +850,6 @@ export default function App() {
     setState(s => ({ ...s, profile: { ...s.profile, name, bodyWeight } }));
   }
 
-  function loadImage(file: File): Promise<HTMLImageElement> {
-    return new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
-      img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
-      img.src = url;
-    });
-  }
-
   async function handleAvatarUpload(file?: File) {
     if (!file) return;
     if (!file.type.startsWith('image/')) {
