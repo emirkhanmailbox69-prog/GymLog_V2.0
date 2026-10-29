@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Activity, Award, BarChart3, BookOpen, Calendar, Camera, Check, ChevronDown, ChevronLeft, ChevronRight,
-  ChevronUp, CircleUserRound, Cloud, Clock3, Copy, Dumbbell, FileDown, Flame, History, Home, MessageSquare,
-  Pencil, Plus, RefreshCw, Save, ShieldCheck, Star, Target, Trash2, TrendingUp, Trophy, X, Zap
+  ChevronUp, CircleUserRound, Cloud, Clock3, Copy, Crown, Dumbbell, FileDown, Flame, History, Home, MessageSquare,
+  Moon, Pencil, Plus, RefreshCw, Save, ShieldCheck, Star, Target, Trash2, TrendingUp, Trophy, X, Zap
 } from 'lucide-react';
 import type { User } from 'firebase/auth';
 import type { ActiveWorkout, AppState, Exercise, Program, RingMetric, SetEntry, Tab, Workout, WorkoutExercise } from './types';
@@ -46,7 +46,37 @@ const xpFor = (w: ActiveWorkout) => {
   const done = setCount(w);
   return done === 0 ? 0 : Math.min(100, 20 + done * 5 + Math.min(20, w.exercises.length * 2));
 };
-const levelFor = (xp: number) => Math.floor(xp / 250) + 1;
+
+const getLevelInfo = (totalXp: number) => {
+  let level = 1;
+  let xpForNext = 250;
+  let remainingXp = totalXp;
+  const MAX_LEVEL = 70;
+
+  while (remainingXp >= xpForNext && level < MAX_LEVEL) {
+    remainingXp -= xpForNext;
+    level++;
+    xpForNext += 100;
+  }
+
+  // На 70 уровне опыт застывает
+  if (level >= MAX_LEVEL) {
+    return { level: MAX_LEVEL, currentXp: 1, nextLevelXp: 1, rank: 'Титан', isMax: true };
+  }
+
+  let rank = 'Новичок';
+  if (level >= 60) rank = 'Полубог';
+  else if (level >= 50) rank = 'Мифический воин';
+  else if (level >= 40) rank = 'Легенда';
+  else if (level >= 30) rank = 'Терминатор';
+  else if (level >= 20) rank = 'Зверь';
+  else if (level >= 15) rank = 'Силач';
+  else if (level >= 10) rank = 'Атлет';
+  else if (level >= 5) rank = 'Любитель';
+
+  return { level, currentXp: remainingXp, nextLevelXp: xpForNext, rank, isMax: false };
+};
+
 const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU');
 const formatSyncTime = (ts: number | null): string => {
   if (!ts) return 'ещё не синхронизировано';
@@ -62,11 +92,10 @@ const formatSyncTime = (ts: number | null): string => {
 const MONTH_NAMES = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
-// Хелперы для дат
 const getStartOfWeek = (d: Date) => {
   const date = new Date(d);
   const day = date.getDay();
-  const diff = date.getDate() - day + (day === 0 ? -6 : 1); // Пн - начало
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
   date.setDate(diff);
   date.setHours(0, 0, 0, 0);
   return date.getTime();
@@ -112,8 +141,6 @@ const RING_METRICS: { id: RingMetric; label: string; shortLabel: string; unit: s
 const getRingMetricInfo = (id: RingMetric) => RING_METRICS.find(m => m.id === id) || RING_METRICS[0];
 const DEFAULT_EXERCISE_IDS = new Set(starterExercises.map(e => e.id));
 const isDefaultExercise = (id: string) => DEFAULT_EXERCISE_IDS.has(id);
-
-// Валидная тренировка — от 30 минут
 const isValidWorkout = (w: Workout) => (w.endedAt - w.startedAt) >= 30 * 60 * 1000;
 
 export default function App() {
@@ -122,7 +149,6 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('home');
   const [toast, setToast] = useState('');
 
-  // Тренировка
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState('');
   const [pickerNewCategory, setPickerNewCategory] = useState(DEFAULT_CATEGORIES[0]);
@@ -134,12 +160,10 @@ export default function App() {
   const [graphExercise, setGraphExercise] = useState<{ id: string; name: string } | null>(null);
   const [tempImage, setTempImage] = useState<string | null>(null);
 
-  // История
   const [historyView, setHistoryView] = useState<'list' | 'calendar'>('list');
   const [calendarDate, setCalendarDate] = useState<Date>(() => new Date());
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
-  // Программы
   const [programsView, setProgramsView] = useState<'list' | 'library'>('list');
   const [libraryTab, setLibraryTab] = useState<'browse' | 'add'>('browse');
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
@@ -153,12 +177,10 @@ export default function App() {
   const [programCustomExCategory, setProgramCustomExCategory] = useState(DEFAULT_CATEGORIES[0]);
   const [showProgramCustomEx, setShowProgramCustomEx] = useState(false);
 
-  // Библиотека
   const [exerciseName, setExerciseName] = useState('');
   const [exerciseMuscle, setExerciseMuscle] = useState(DEFAULT_CATEGORIES[0]);
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
 
-  // Email/Password
   const [emailAuthOpen, setEmailAuthOpen] = useState(false);
   const [emailAuthMode, setEmailAuthMode] = useState<'signup' | 'signin' | 'reset'>('signup');
   const [emailValue, setEmailValue] = useState('');
@@ -166,7 +188,6 @@ export default function App() {
   const [emailAuthLoading, setEmailAuthLoading] = useState(false);
   const [emailAuthError, setEmailAuthError] = useState<string | null>(null);
 
-  // === Справочники и фильтры (объявлены ДО использования) ===
   const allCategories = useMemo(() => {
     const set = new Set<string>(DEFAULT_CATEGORIES);
     (state.customCategories ?? []).forEach(c => set.add(c));
@@ -211,7 +232,6 @@ export default function App() {
     return result;
   }, [state.customCategories, groupedExercises]);
 
-  // === Эффекты ===
   useEffect(() => {
     if (!saveState(state)) notify('Не удалось сохранить локально. Экспортируй резервную копию.');
   }, [state]);
@@ -256,9 +276,9 @@ export default function App() {
     window.setTimeout(() => setToast(''), 2600);
   }
 
-  // === Вычисление метрик и колец ===
   const xp = totalXp(state.workouts);
-  const level = levelFor(xp);
+  const levelInfo = getLevelInfo(xp);
+  const level = levelInfo.level;
   const currentWorkout = state.activeWorkout;
 
   const currentWeekStart = getStartOfWeek(new Date());
@@ -318,8 +338,9 @@ export default function App() {
 
   const isRing1Closed = ring1Value >= state.settings.ring1.goal;
   const isRing2Closed = ring2Value >= state.settings.ring2.goal;
+  
+  const isLevelGlowing = !levelInfo.isMax && (levelInfo.currentXp / levelInfo.nextLevelXp) >= 0.9;
 
-  // === Достижения (Геймификация 2.0) ===
   useEffect(() => {
     const newAch: Record<string, number> = {};
     let hasNew = false;
@@ -347,13 +368,44 @@ export default function App() {
     check('vol50k', totalVol >= 50000);
     check('sets100', totalSets >= 100);
     check('iron_streak', streak >= 5);
+    
+    check('centurion', state.workouts.length >= 50);
+    check('programmer', state.programs.length >= 5);
+    
+    const customExCount = state.exercises.filter(e => !isDefaultExercise(e.id)).length;
+    check('collector', customExCount >= 5);
+
+    const allSets = state.workouts.flatMap(w => w.exercises.flatMap(e => e.sets));
+    const notesCount = allSets.filter(s => s.note && s.note.trim().length > 0).length;
+    const hasHeavy = allSets.some(s => Number(s.weight) >= 100);
+    const hasTitan = allSets.some(s => Number(s.weight) >= 150);
+    const hasLongWorkout = state.workouts.some(w => (w.endedAt - w.startedAt) >= 120 * 60000);
+
+    check('philosopher', notesCount >= 10);
+    check('heavy_lift', hasHeavy);
+    check('titan_lift', hasTitan);
+    check('marathon_time', hasLongWorkout);
+
+    const hasEarly = state.workouts.some(w => new Date(w.startedAt).getHours() < 8);
+    const hasLate = state.workouts.some(w => new Date(w.startedAt).getHours() >= 22);
+    check('early_bird', hasEarly);
+    check('night_owl', hasLate);
+
+    // Группировка по месяцам для "Идеального месяца"
+    const months: Record<string, number> = {};
+    state.workouts.forEach(w => {
+      const d = new Date(w.endedAt);
+      const key = `${d.getFullYear()}-${d.getMonth()}`;
+      months[key] = (months[key] || 0) + 1;
+    });
+    const hasPerfectMonth = Object.values(months).some(count => count >= 16);
+    check('perfect_month', hasPerfectMonth);
 
     if (hasNew) {
       setState(s => ({ ...s, unlockedAchievements: { ...s.unlockedAchievements, ...newAch } }));
     }
-  }, [state.workouts, streak, validWeekWorkouts.length, validMonthWorkouts.length, state.unlockedAchievements]);
+  }, [state.workouts, state.exercises, state.programs, streak, validWeekWorkouts.length, validMonthWorkouts.length, state.unlockedAchievements]);
 
-  // === Календарь ===
   const workoutsByDay = useMemo(() => {
     const map: Record<string, Workout[]> = {};
     for (const w of state.workouts) {
@@ -382,13 +434,12 @@ export default function App() {
     return closed;
   }, [state.workouts]);
 
-    const isIdealMonth = useMemo(() => {
+  const isIdealMonth = useMemo(() => {
     const year = calendarDate.getFullYear();
     const month = calendarDate.getMonth();
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     
-    // Не показываем идеальный месяц для будущих месяцев
     if (firstDay.getTime() > Date.now()) return false;
 
     let current = getStartOfWeek(firstDay);
@@ -443,7 +494,6 @@ export default function App() {
     if (!selectedDay) { setCalendarDate(new Date()); setSelectedDay(todayKey); }
   }
 
-  // === Функции ===
   function patchActive(updater: (active: ActiveWorkout) => ActiveWorkout) {
     setState(s => s.activeWorkout ? { ...s, activeWorkout: updater(s.activeWorkout) } : s);
   }
@@ -760,11 +810,23 @@ export default function App() {
     { id: 'streak7', icon: Zap, title: 'Неделя силы', desc: 'Серия 7 дней' },
     { id: 'vol10k', icon: Dumbbell, title: 'Первая тонна', desc: '10 000 кг объёма' },
     { id: 'vol50k', icon: Dumbbell, title: 'Пять тонн', desc: '50 000 кг объёма' },
-    { id: 'sets100', icon: Check, title: 'Сто подходов', desc: '100 выполненных подходов' }
+    { id: 'sets100', icon: Check, title: 'Сто подходов', desc: '100 выполненных подходов' },
+    { id: 'early_bird', icon: Clock3, title: 'Ранняя пташка', desc: 'Тренировка до 08:00' },
+    { id: 'night_owl', icon: Moon, title: 'Полуночник', desc: 'Тренировка после 22:00' },
+    { id: 'heavy_lift', icon: Dumbbell, title: 'Тяжеловес', desc: 'Взять вес 100+ кг' },
+    { id: 'philosopher', icon: MessageSquare, title: 'Философ', desc: '10 заметок к подходам' },
+    { id: 'titan_lift', icon: Dumbbell, title: 'Абсолют', desc: 'Взять вес 150+ кг' },
+    { id: 'marathon_time', icon: Clock3, title: 'Долгоиграющий', desc: 'Тренировка 2 часа и более' },
+    { id: 'collector', icon: Pencil, title: 'Коллекционер', desc: 'Создать 5 своих упражнений' },
+    { id: 'programmer', icon: BookOpen, title: 'Программист', desc: 'Создать 5 программ' },
+    { id: 'centurion', icon: Trophy, title: 'Юбилей', desc: 'Завершить 50 тренировок' },
+    { id: 'perfect_month', icon: Calendar, title: 'Идеальный месяц', desc: 'Закрыть все недели в месяце' }
   ];
 
+  const appShellClass = levelInfo.isMax ? 'app-shell max-level-gold' : 'app-shell';
+
   return (
-    <div className="app-shell">
+    <div className={appShellClass}>
       <header className="topbar">
         <button className="brand" onClick={() => setTab('home')} aria-label="На главную">
           <img src={`${import.meta.env.BASE_URL}logo.png`} alt="GymLog" className="brand-mark-img" />
@@ -782,10 +844,10 @@ export default function App() {
           <p className="intro">Прогресс за последние 7 дней.</p>
 
           <div className={`rings-card ${isRing1Closed && isRing2Closed ? 'all-closed' : ''}`}>
-                        <ActivityRings rings={[
+            <ActivityRings rings={[
               { percent: ring1Value / Math.max(1, state.settings.ring1.goal), color: '#ff6482', closed: isRing1Closed },
               { percent: ring2Value / Math.max(1, state.settings.ring2.goal), color: '#d0f477', closed: isRing2Closed },
-              { percent: (xp % 250) / 250, color: '#32d4ff', closed: (xp % 250) >= 225 }
+              { percent: levelInfo.currentXp / Math.max(1, levelInfo.nextLevelXp), color: '#32d4ff', closed: isLevelGlowing }
             ]} />
             <div className="rings-legend">
               <div className={`ring-legend-row ${isRing1Closed ? 'closed' : ''}`}>
@@ -798,7 +860,7 @@ export default function App() {
               </div>
               <div className="ring-legend-row">
                 <span className="ring-dot" style={{ background: '#32d4ff' }} />
-                <div><b>До уровня {level + 1}</b><small>{xp % 250} из 250 XP</small></div>
+                <div><b>{levelInfo.rank} · Ур. {level}</b><small>{levelInfo.isMax ? 'Максимальный уровень' : `${levelInfo.currentXp} из ${levelInfo.nextLevelXp} XP`}</small></div>
               </div>
             </div>
           </div>
@@ -823,7 +885,7 @@ export default function App() {
           <div className="stats-grid">
             <Metric label="ТРЕНИРОВОК" value={String(state.workouts.length)} note="всего" />
             <Metric label="ОБЪЁМ" value={fmt(state.workouts.reduce((n, w) => n + volume(w), 0))} note="кг × повторы" />
-            <Metric label="УРОВЕНЬ" value={String(level)} note={`${xp} XP`} />
+            <Metric label="УРОВЕНЬ" value={String(level)} note={levelInfo.rank} />
             <Metric label="СЕРИЯ" value={String(streak)} note="дней подряд" />
           </div>
 
@@ -1021,7 +1083,7 @@ export default function App() {
                 <Metric label="ТРЕНИРОВОК" value={String(state.workouts.length)} note="всего" />
                 <Metric label="ОБЪЁМ" value={fmt(state.workouts.reduce((n, w) => n + volume(w), 0))} note="кг × повторы" />
                 <Metric label="ВРЕМЯ" value={String(state.workouts.reduce((n, w) => n + durationMinutes(w.startedAt, w.endedAt), 0))} note="минут" />
-                <Metric label="XP" value={String(xp)} note={`уровень ${level}`} />
+                <Metric label="XP" value={String(xp)} note={`${levelInfo.rank}`} />
               </div>
               {state.workouts.length ? <div className="history-list">{state.workouts.map(w => <article className="panel history-card" key={w.id}>
                 <div className="history-top"><div><h3>{w.name}</h3><p>{localDate(w.endedAt)}, {localTime(w.startedAt)}–{localTime(w.endedAt)} · {formatDuration(w.startedAt, w.endedAt)}</p></div><button className="icon-button subtle" aria-label="Уд." onClick={() => deleteWorkout(w.id)}><Trash2 size={16} /></button></div>
@@ -1124,12 +1186,18 @@ export default function App() {
           <p className="eyebrow">ПРОГРЕСС И НАГРАДЫ</p>
           <h1>Награды.</h1>
           <p className="intro">Достижения открываются автоматически. Тренировки от 30 минут идут в зачёт.</p>
-          <div className="quest-card">
-            <div className="quest-icon"><Trophy size={28} /></div>
+          <div className={`quest-card ${levelInfo.isMax ? 'max-level-card' : ''}`}>
+            <div className="quest-icon">{levelInfo.isMax ? <Crown size={28} /> : <Trophy size={28} />}</div>
             <p className="eyebrow">ТВОЙ РАНГ</p>
-            <h2>Уровень {level}</h2>
-            <div className="xp-line"><span>{xp % 250} / 250 XP</span><span>{250 - xp % 250} до уровня</span></div>
-            <div className="progress-track"><span style={{ width: `${(xp % 250) / 2.5}%` }} /></div>
+            <h2>{levelInfo.rank} · Уровень {level}</h2>
+            {!levelInfo.isMax ? (
+              <>
+                <div className="xp-line"><span>{levelInfo.currentXp} / {levelInfo.nextLevelXp} XP</span><span>{levelInfo.nextLevelXp - levelInfo.currentXp} до уровня</span></div>
+                <div className="progress-track"><span style={{ width: `${(levelInfo.currentXp / levelInfo.nextLevelXp) * 100}%` }} /></div>
+              </>
+            ) : (
+              <div className="xp-line"><span>Максимальный уровень достигнут!</span><span>{xp} XP всего</span></div>
+            )}
             <p className="quest-note">{state.workouts.length === 0 ? 'Первая тренировка откроет путь.' : `Тренировок завершено: ${state.workouts.length}.`}</p>
           </div>
           <SectionTitle title="Достижения" />
@@ -1375,7 +1443,7 @@ function ActivityRings({ rings }: { rings: { percent: number; color: string; clo
   const gap = 5;
   return (
     <svg viewBox="0 0 200 200" className="rings-svg" aria-hidden="true">
-            {rings.map((ring, i) => {
+      {rings.map((ring, i) => {
         const r = 82 - i * (stroke + gap);
         const c = 2 * Math.PI * r;
         const pct = Math.max(0, Math.min(1, ring.percent || 0));
