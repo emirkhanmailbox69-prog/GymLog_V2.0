@@ -1245,14 +1245,14 @@ export default function App() {
                 <div className="ring-setting-color" style={{ background: '#ff6482' }} />
                 <div className="ring-setting-body">
                   <select className="ring-setting-select" value={state.settings.ring1.metric} onChange={e => updateRingMetric('ring1', e.target.value as RingMetric)}>{RING_METRICS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}</select>
-                  <div className="ring-setting-goal"><span>Цель:</span><input type="number" className="ring-setting-input" value={state.settings.ring1.goal} onChange={e => updateRingGoal('ring1', Number(e.target.value))} min={1} /><span className="ring-setting-unit">{ring1Info.unit}</span></div>
+                                    <div className="ring-setting-goal"><span>Цель:</span><RingGoalInput value={state.settings.ring1.goal} onChange={v => updateRingGoal('ring1', v)} /><span className="ring-setting-unit">{ring1Info.unit}</span></div>
                 </div>
               </div>
               <div className="ring-setting">
                 <div className="ring-setting-color" style={{ background: '#d0f477' }} />
                 <div className="ring-setting-body">
                   <select className="ring-setting-select" value={state.settings.ring2.metric} onChange={e => updateRingMetric('ring2', e.target.value as RingMetric)}>{RING_METRICS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}</select>
-                  <div className="ring-setting-goal"><span>Цель:</span><input type="number" className="ring-setting-input" value={state.settings.ring2.goal} onChange={e => updateRingGoal('ring2', Number(e.target.value))} min={1} /><span className="ring-setting-unit">{ring2Info.unit}</span></div>
+                                    <div className="ring-setting-goal"><span>Цель:</span><RingGoalInput value={state.settings.ring2.goal} onChange={v => updateRingGoal('ring2', v)} /><span className="ring-setting-unit">{ring2Info.unit}</span></div>
                 </div>
               </div>
             </div>
@@ -1506,5 +1506,39 @@ function ProgressChart({ points }: { points: { date: number; value: number }[] }
         <text x={coords[coords.length - 1].x} y={H - 10} textAnchor="end" className="chart-label">{fmtShort(coords[coords.length - 1].date)}</text>
       </svg>
     </div>
+  );
+}
+function RingGoalInput({ value, onChange }: { value: number; onChange: (val: number) => void }) {
+  const [localValue, setLocalValue] = useState(String(value));
+
+  useEffect(() => {
+    setLocalValue(String(value));
+  }, [value]);
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setLocalValue(e.target.value);
+    const num = Number(e.target.value);
+    if (e.target.value !== '' && !isNaN(num) && num > 0) {
+      onChange(num);
+    }
+  }
+
+  function handleBlur() {
+    if (localValue === '' || isNaN(Number(localValue)) || Number(localValue) <= 0) {
+      setLocalValue(String(value));
+    } else {
+      onChange(Number(localValue));
+    }
+  }
+
+  return (
+    <input
+      type="number"
+      className="ring-setting-input"
+      value={localValue}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      min={1}
+    />
   );
 }
