@@ -1405,21 +1405,33 @@ h3{font:600 16px/1.3 -apple-system,sans-serif;margin-bottom:6px}
   border-radius: 6px;
   box-shadow: 0 0 10px rgba(242, 187, 72, 0.4);
 }
+/* ===== Свечение закрытых колец ===== */
+@keyframes ring-pulse {
+  0% { filter: drop-shadow(0 0 4px rgba(208, 244, 119, 0.4)); }
+  50% { filter: drop-shadow(0 0 14px rgba(208, 244, 119, 0.9)); }
+  100% { filter: drop-shadow(0 0 4px rgba(208, 244, 119, 0.4)); }
+}
+.ring-closed circle:nth-child(2) {
+  animation: ring-pulse 2s infinite ease-in-out;
+}
 
-/* Золотые дни (когда неделя закрыта) */
-.calendar-day.gold-week {
-  border-color: rgba(242, 187, 72, 0.6) !important;
-  color: #F2BB48;
-}
-.calendar-day.gold-week.has-workout {
+/* ===== Геймификация 2.0: Золотые дни в календаре ===== */
+.calendar-day.gold-day {
   border-color: #F2BB48 !important;
-  background: rgba(242, 187, 72, 0.1);
+  color: #F2BB48;
+  background: rgba(242, 187, 72, 0.08);
 }
-.calendar-day.gold-week.selected {
-  background: #F2BB48;
-  color: #000;
-  border-color: #F2BB48;
+/* Если это еще и сегодняшний день */
+.calendar-day.gold-day.today {
+  box-shadow: 0 0 0 2px rgba(242, 187, 72, 0.3) !important;
 }
-.calendar-day.gold-week.selected .calendar-day-num {
-  color: #000;
+/* Если день выбран пользователем */
+.calendar-day.gold-day.selected {
+  background: #F2BB48 !important;
+  color: #000 !important;
+  border-color: #F2BB48 !important;
+  box-shadow: none !important;
+}
+.calendar-day.gold-day.selected .calendar-day-num {
+  color: #000 !important;
 }
