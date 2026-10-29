@@ -382,22 +382,26 @@ export default function App() {
     return closed;
   }, [state.workouts]);
 
-  const isIdealMonth = useMemo(() => {
+    const isIdealMonth = useMemo(() => {
     const year = calendarDate.getFullYear();
     const month = calendarDate.getMonth();
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     
+    // Не показываем идеальный месяц для будущих месяцев
+    if (firstDay.getTime() > Date.now()) return false;
+
     let current = getStartOfWeek(firstDay);
     const end = lastDay.getTime();
     let weekCount = 0;
 
     while (current <= end) {
-      if (new Date(current).getMonth() === month) {
+      const weekStartDate = new Date(current);
+      if (weekStartDate.getMonth() === month) {
         weekCount++;
         if (!closedWeekStarts.has(current)) return false;
       }
-      current = current + 7 * 86400000;
+      current += 7 * 86400000;
     }
     return weekCount > 0;
   }, [calendarDate, closedWeekStarts]);
@@ -1064,13 +1068,14 @@ export default function App() {
                     const isFuture = date.getTime() > Date.now() && !isToday;
                     const weekStart = getStartOfWeek(date);
                     const isGoldWeek = closedWeekStarts.has(weekStart);
+                    const isGoldDay = isGoldWeek && hasWorkout;
                     const classes = [
                       'calendar-day',
                       isToday ? 'today' : '',
                       isSelected ? 'selected' : '',
                       hasWorkout ? 'has-workout' : '',
                       isFuture ? 'future' : '',
-                      isGoldWeek ? 'gold-week' : ''
+                      isGoldDay ? 'gold-day' : ''
                     ].filter(Boolean).join(' ');
                     return (
                       <button key={key} className={classes} onClick={() => selectDay(key)} aria-label={`${date.getDate()} ${MONTH_NAMES[date.getMonth()]}`}>
@@ -1380,7 +1385,7 @@ function ActivityRings({ rings }: { rings: { percent: number; color: string; clo
             <circle cx="100" cy="100" r={r} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth={stroke} />
             <circle cx="100" cy="100" r={r} fill="none" stroke={ring.color} strokeWidth={stroke} strokeLinecap="round"
               strokeDasharray={c} strokeDashoffset={c * (1 - pct)}
-              transform="rotate(-90 100 100)" style={{ transition: 'stroke-dashoffset .6s ease', filter: isClosed ? 'drop-shadow(0 0 8px rgba(208, 244, 119, 0.6))' : 'none' }} />
+              transform="rotate(-90 100 100)" style={{ transition: 'stroke-dashoffset .6s ease' }} />
           </g>
         );
       })}
