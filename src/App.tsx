@@ -1375,13 +1375,22 @@ function ActivityRings({ rings }: { rings: { percent: number; color: string; clo
   const gap = 5;
   return (
     <svg viewBox="0 0 200 200" className="rings-svg" aria-hidden="true">
-      {rings.map((ring, i) => {
+            {rings.map((ring, i) => {
         const r = 82 - i * (stroke + gap);
         const c = 2 * Math.PI * r;
         const pct = Math.max(0, Math.min(1, ring.percent || 0));
         const isClosed = ring.closed || pct >= 1;
         return (
-          <g key={i} className={isClosed ? 'ring-closed' : ''}>
+          <g key={i}>
+            {isClosed && (
+              <circle
+                cx="100" cy="100" r={r} fill="none"
+                stroke={ring.color} strokeWidth={stroke + 4}
+                strokeLinecap="round"
+                style={{ filter: 'blur(4px)' }}
+                className="ring-glow"
+              />
+            )}
             <circle cx="100" cy="100" r={r} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth={stroke} />
             <circle cx="100" cy="100" r={r} fill="none" stroke={ring.color} strokeWidth={stroke} strokeLinecap="round"
               strokeDasharray={c} strokeDashoffset={c * (1 - pct)}
