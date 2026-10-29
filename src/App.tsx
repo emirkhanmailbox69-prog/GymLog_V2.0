@@ -13,6 +13,7 @@ import {
   logOut, linkWithEmail, signInWithEmail, resetPassword
 } from './firebase';
 import { useCloudSync } from './hooks/useCloudSync';
+import { ImageCropper } from './components/ImageCropper';
 
 const uid = () => crypto.randomUUID();
 const emptySet = (): SetEntry => ({ id: uid(), weight: '', reps: '', done: false });
@@ -116,6 +117,7 @@ export default function App() {
   const [finishing, setFinishing] = useState(false);
   const [xpPop, setXpPop] = useState<number | null>(null);
   const [graphExercise, setGraphExercise] = useState<{ id: string; name: string } | null>(null);
+  const [tempImage, setTempImage] = useState<string | null>(null);
 
   // История
   const [historyView, setHistoryView] = useState<'list' | 'calendar'>('list');
@@ -864,25 +866,8 @@ export default function App() {
       notify('Выбери файл изображения');
       return;
     }
-    try {
-      const img = await loadImage(file);
-      const SIZE = 192;
-      const canvas = document.createElement('canvas');
-      canvas.width = SIZE;
-      canvas.height = SIZE;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Canvas недоступен');
-      const side = Math.min(img.width, img.height);
-      const sx = (img.width - side) / 2;
-      const sy = (img.height - side) / 2;
-      ctx.drawImage(img, sx, sy, side, side, 0, 0, SIZE, SIZE);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-      setState(s => ({ ...s, profile: { ...s.profile, avatar: dataUrl } }));
-      notify('Фото обновлено');
-    } catch (err) {
-      console.error('Avatar upload error:', err);
-      notify('Не удалось загрузить фото');
-    }
+    const url = URL.createObjectURL(file);
+    setTempImage(url);
   }
 
   function removeAvatar() {
@@ -2007,6 +1992,17 @@ export default function App() {
         <div className="xp-pop" role="status">
           +{xpPop} XP
         </div>
+      )}
+            {tempImage && (
+        <ImageCropper
+          imageSrc={tempImage}
+          onCancel={() => setTempImage(null)}
+          onCropComplete={(cropped) => {
+            setState(s => ({ ...s, profile: { ...s.profile, avatar: cropped } }));
+            setTempImage(null);
+            notify('Фото обновлено');
+          }}
+        />
       )}
 
       {toast && <div className="toast" role="status">{toast}</div>}
