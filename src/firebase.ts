@@ -7,9 +7,9 @@ import {
 import type { User } from 'firebase/auth';
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  doc, setDoc, onSnapshot
+  doc, setDoc, onSnapshot, collection, query, orderBy, limit, getDocs, deleteDoc
 } from 'firebase/firestore';
-import type { AppState } from './types';
+import type { AppState, PublicProfile } from './types';
 
 const firebaseConfig = {
   apiKey: "AIzaSyC0kRaPp9Wyj64WqUgGhQQjHnGbhB-BiKM",
@@ -35,13 +35,11 @@ export function subscribeToAuth(callback: (user: User | null) => void) {
   return onAuthStateChanged(auth, callback);
 }
 
-/** Фоновый анонимный вход — нужен, чтобы Firestore работал до регистрации. Пользователь этого не видит. */
 export async function ensureAnonymousAuth(): Promise<void> {
   if (auth.currentUser) return;
   await signInAnonymously(auth);
 }
 
-/** Привязка email+пароль к текущему (анонимному) аккаунту. UID сохраняется, данные остаются. */
 export async function linkWithEmail(email: string, password: string): Promise<User> {
   if (!auth.currentUser) throw new Error('Нет активного пользователя.');
   const credential = EmailAuthProvider.credential(email, password);
@@ -49,7 +47,6 @@ export async function linkWithEmail(email: string, password: string): Promise<Us
   return result.user;
 }
 
-/** Вход в существующий аккаунт по email+пароль. Переключает на другой UID, данные подтянутся из Firestore. */
 export async function signInWithEmail(email: string, password: string): Promise<User> {
   if (auth.currentUser?.isAnonymous) {
     await signOut(auth);
@@ -78,4 +75,20 @@ export function subscribeToState(userId: string, callback: (state: AppState | nu
 export async function pushStateToCloud(userId: string, state: AppState) {
   const userDoc = doc(db, 'users', userId);
   await setDoc(userDoc, state);
+}
+
+// === Лидерборд ===
+export async function updatePublicProfile(data: PublicProfile) {
+  const profileDoc = doc(db, 'publicProfiles', data.uid);
+  await setDoc(profileDoc, data, { merge: true });
+}
+
+export async function removePublicProfile(uid: string) {
+  await deleteDoc(doc(db, 'publicProfiles', uid));
+}
+
+export async function fetchLeaderboard(metric: 'totalXp' | 'weeklyVolume' | 'streak'): Promise<PublicProfile[]> {
+  const q = query(collection(db, 'publicProfiles'), orderBy(metric, 'desc'), limit(50));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => doc.data() as PublicProfile);
 }
