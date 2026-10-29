@@ -17,7 +17,8 @@ export function initialState(): AppState {
     settings: {
       restSeconds: 90,
       ring1: { metric: 'workouts_week', goal: 3 },
-      ring2: { metric: 'sets_week', goal: 50 }
+      ring2: { metric: 'sets_week', goal: 50 },
+      showInLeaderboard: false
     }
   };
 }
@@ -26,6 +27,7 @@ type PartialSettings = Partial<{
   restSeconds: number;
   ring1: Partial<{ metric: string; goal: number }>;
   ring2: Partial<{ metric: string; goal: number }>;
+  showInLeaderboard: boolean;
 }>;
 
 export function ensureState(state: Partial<AppState> | null | undefined): AppState {
@@ -34,7 +36,6 @@ export function ensureState(state: Partial<AppState> | null | undefined): AppSta
   const s = (state.settings ?? {}) as PartialSettings;
   const ring1Metric = (s.ring1?.metric as AppState['settings']['ring1']['metric']) ?? defaults.settings.ring1.metric;
   const ring2Metric = (s.ring2?.metric as AppState['settings']['ring2']['metric']) ?? defaults.settings.ring2.metric;
-  
   return {
     ...defaults,
     ...state,
@@ -49,7 +50,8 @@ export function ensureState(state: Partial<AppState> | null | undefined): AppSta
       ring2: {
         metric: ring2Metric,
         goal: s.ring2?.goal ?? defaults.settings.ring2.goal
-      }
+      },
+      showInLeaderboard: s.showInLeaderboard ?? defaults.settings.showInLeaderboard
     },
     customCategories: Array.isArray(state.customCategories) ? state.customCategories : [],
     exercises: Array.isArray(state.exercises) && state.exercises.length > 0 ? state.exercises : defaults.exercises,
