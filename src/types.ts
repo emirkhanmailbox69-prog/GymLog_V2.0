@@ -35,5 +35,18 @@ export type AppState = {
     restSeconds: number;
     ring1: RingSetting;
     ring2: RingSetting;
+    showInLeaderboard: boolean;
   };
+};
+
+export type PublicProfile = {
+  uid: string;
+  displayName: string;
+  avatar?: string;
+  totalXp: number;
+  level: number;
+  rank: string;
+  weeklyVolume: number;
+  streak: number;
+  updatedAt: number;
 };
