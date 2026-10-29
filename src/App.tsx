@@ -782,10 +782,10 @@ export default function App() {
           <p className="intro">Прогресс за последние 7 дней.</p>
 
           <div className={`rings-card ${isRing1Closed && isRing2Closed ? 'all-closed' : ''}`}>
-            <ActivityRings rings={[
+                        <ActivityRings rings={[
               { percent: ring1Value / Math.max(1, state.settings.ring1.goal), color: '#ff6482', closed: isRing1Closed },
               { percent: ring2Value / Math.max(1, state.settings.ring2.goal), color: '#d0f477', closed: isRing2Closed },
-              { percent: (xp % 250) / 250, color: '#32d4ff', closed: (xp % 250) >= 250 }
+              { percent: (xp % 250) / 250, color: '#32d4ff', closed: (xp % 250) >= 225 }
             ]} />
             <div className="rings-legend">
               <div className={`ring-legend-row ${isRing1Closed ? 'closed' : ''}`}>
