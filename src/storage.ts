@@ -13,6 +13,7 @@ export function initialState(): AppState {
     exercises: starterExercises,
     programs: [],
     customCategories: [],
+    unlockedAchievements: {},
     settings: {
       restSeconds: 90,
       ring1: { metric: 'workouts_week', goal: 4 },
@@ -33,10 +34,12 @@ export function ensureState(state: Partial<AppState> | null | undefined): AppSta
   const s = (state.settings ?? {}) as PartialSettings;
   const ring1Metric = (s.ring1?.metric as AppState['settings']['ring1']['metric']) ?? defaults.settings.ring1.metric;
   const ring2Metric = (s.ring2?.metric as AppState['settings']['ring2']['metric']) ?? defaults.settings.ring2.metric;
+  
   return {
     ...defaults,
     ...state,
     profile: { ...defaults.profile, ...(state.profile || {}) },
+    unlockedAchievements: typeof state.unlockedAchievements === 'object' && state.unlockedAchievements !== null ? state.unlockedAchievements : {},
     settings: {
       restSeconds: s.restSeconds ?? defaults.settings.restSeconds,
       ring1: {
