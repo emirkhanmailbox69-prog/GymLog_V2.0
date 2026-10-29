@@ -127,7 +127,7 @@ const MUSCLE_MAP: Record<string, string> = {
 const normalizeMuscle = (m: string) => MUSCLE_MAP[m] || m;
 
 const RING_METRICS: { id: RingMetric; label: string; shortLabel: string; unit: string; defaultGoal: number }[] = [
-  { id: 'workouts_week', label: 'Тренировки за неделю', shortLabel: 'Тренировки', unit: 'трен.', defaultGoal: 4 },
+  { id: 'workouts_week', label: 'Тренировки за неделю', shortLabel: 'Тренировки', unit: 'трен.', defaultGoal: 3 },
   { id: 'sets_week', label: 'Подходы за неделю', shortLabel: 'Подходы', unit: 'подх.', defaultGoal: 50 },
   { id: 'volume_week', label: 'Объём за неделю', shortLabel: 'Объём', unit: 'кг', defaultGoal: 10000 },
   { id: 'minutes_week', label: 'Время за неделю', shortLabel: 'Время', unit: 'мин', defaultGoal: 180 },
@@ -355,7 +355,7 @@ export default function App() {
 
     const totalVol = state.workouts.reduce((n, w) => n + volume(w), 0);
     const totalSets = state.workouts.reduce((n, w) => n + setCount(w), 0);
-    const isPerfectWeek = validWeekWorkouts.length >= 4; 
+    const isPerfectWeek = validWeekWorkouts.length >= 3; 
     
     check('first', state.workouts.length >= 1);
     check('five', state.workouts.length >= 5);
@@ -429,7 +429,7 @@ export default function App() {
     }
     const closed = new Set<number>();
     for (const [ws, workouts] of Object.entries(weeks)) {
-      if (workouts.length >= 4) closed.add(Number(ws));
+      if (workouts.length >= 3) closed.add(Number(ws));
     }
     return closed;
   }, [state.workouts]);
