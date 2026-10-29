@@ -5,12 +5,13 @@ import {
   Moon, Pencil, Plus, RefreshCw, Save, ShieldCheck, Star, Target, Trash2, TrendingUp, Trophy, X, Zap
 } from 'lucide-react';
 import type { User } from 'firebase/auth';
-import type { ActiveWorkout, AppState, Exercise, Program, RingMetric, SetEntry, Tab, Workout, WorkoutExercise } from './types';
+import type { ActiveWorkout, AppState, Exercise, Program, PublicProfile, RingMetric, SetEntry, Tab, Workout, WorkoutExercise } from './types';
 import { loadState, saveState, downloadBackup, ensureState } from './storage';
 import { starterExercises } from './data';
 import {
   firebaseConfigured, subscribeToAuth, ensureAnonymousAuth,
-  logOut, linkWithEmail, signInWithEmail, resetPassword
+  logOut, linkWithEmail, signInWithEmail, resetPassword,
+  updatePublicProfile, removePublicProfile, fetchLeaderboard
 } from './firebase';
 import { useCloudSync } from './hooks/useCloudSync';
 import { ImageCropper } from './components/ImageCropper';
@@ -59,7 +60,6 @@ const getLevelInfo = (totalXp: number) => {
     xpForNext += 100;
   }
 
-  // На 70 уровне опыт застывает
   if (level >= MAX_LEVEL) {
     return { level: MAX_LEVEL, currentXp: 1, nextLevelXp: 1, rank: 'Титан', isMax: true };
   }
@@ -159,6 +159,12 @@ export default function App() {
   const [xpPop, setXpPop] = useState<number | null>(null);
   const [graphExercise, setGraphExercise] = useState<{ id: string; name: string } | null>(null);
   const [tempImage, setTempImage] = useState<string | null>(null);
+
+  // GymQuest
+  const [questView, setQuestView] = useState<'achievements' | 'leaderboard'>('achievements');
+  const [leaderboardMetric, setLeaderboardMetric] = useState<'totalXp' | 'weeklyVolume' | 'streak'>('totalXp');
+  const [leaderboardData, setLeaderboardData] = useState<PublicProfile[]>([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
 
   const [historyView, setHistoryView] = useState<'list' | 'calendar'>('list');
   const [calendarDate, setCalendarDate] = useState<Date>(() => new Date());
@@ -271,9 +277,96 @@ export default function App() {
     }
   }, [tab]);
 
+  // Эффект обновления публичного профиля при синхронизации
+  useEffect(() => {
+    if (!user || !state.settings.showInLeaderboard) return;
+    
+    const xp = totalXp(state.workouts);
+    const lvlInfo = getLevelInfo(xp);
+    const currentWeekStart = getStartOfWeek(new Date());
+    const currentWeekWorkouts = state.workouts.filter(w => w.endedAt >= currentWeekStart && isValidWorkout(w));
+    const weeklyVolume = currentWeekWorkouts.reduce((n, w) => n + volume(w), 0);
+    
+    const validDays = new Set(state.workouts.filter(isValidWorkout).map(w => new Date(w.endedAt).toDateString()));
+    let streak = 0;
+    if (validDays.size > 0) {
+      const d = new Date();
+      if (!validDays.has(d.toDateString())) d.setDate(d.getDate() - 1);
+      while (validDays.has(d.toDateString())) { streak++; d.setDate(d.getDate() - 1); }
+    }
+
+    const publicData: PublicProfile = {
+      uid: user.uid,
+      displayName: state.profile.name || 'Атлет',
+      avatar: state.profile.avatar,
+      totalXp: xp,
+      level: lvlInfo.level,
+      rank: lvlInfo.rank,
+      weeklyVolume,
+      streak,
+      updatedAt: Date.now()
+    };
+
+    const timer = setTimeout(() => {
+      updatePublicProfile(publicData).catch(err => console.error('Leaderboard update failed:', err));
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [user, state.settings.showInLeaderboard, state.workouts, state.profile.name, state.profile.avatar]);
+
+  // Эффект загрузки лидерборда
+  useEffect(() => {
+    if (tab !== 'quest' || questView !== 'leaderboard') return;
+    let isMounted = true;
+    setLeaderboardLoading(true);
+    
+    fetchLeaderboard(leaderboardMetric)
+      .then(data => { if (isMounted) setLeaderboardData(data); })
+      .catch(err => console.error(err))
+      .finally(() => { if (isMounted) setLeaderboardLoading(false); });
+
+    return () => { isMounted = false; };
+  }, [tab, questView, leaderboardMetric]);
+
   function notify(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(''), 2600);
+  }
+
+  async function toggleLeaderboardParticipation() {
+    if (!user) return;
+    const newVal = !state.settings.showInLeaderboard;
+    setState(s => ({ ...s, settings: { ...s.settings, showInLeaderboard: newVal } }));
+    
+    if (newVal) {
+      // Сразу пушим при включении
+      const xp = totalXp(state.workouts);
+      const lvlInfo = getLevelInfo(xp);
+      const currentWeekStart = getStartOfWeek(new Date());
+      const currentWeekWorkouts = state.workouts.filter(w => w.endedAt >= currentWeekStart && isValidWorkout(w));
+      const weeklyVolume = currentWeekWorkouts.reduce((n, w) => n + volume(w), 0);
+      const validDays = new Set(state.workouts.filter(isValidWorkout).map(w => new Date(w.endedAt).toDateString()));
+      let streak = 0;
+      if (validDays.size > 0) {
+        const d = new Date();
+        if (!validDays.has(d.toDateString())) d.setDate(d.getDate() - 1);
+        while (validDays.has(d.toDateString())) { streak++; d.setDate(d.getDate() - 1); }
+      }
+      try {
+        await updatePublicProfile({
+          uid: user.uid,
+          displayName: state.profile.name || 'Атлет',
+          avatar: state.profile.avatar,
+          totalXp: xp, level: lvlInfo.level, rank: lvlInfo.rank,
+          weeklyVolume, streak, updatedAt: Date.now()
+        });
+        notify('Вы в общем рейтинге!');
+      } catch { notify('Ошибка обновления рейтинга.'); }
+    } else {
+      try {
+        await removePublicProfile(user.uid);
+        notify('Вы убраны из рейтинга.');
+      } catch { notify('Ошибка удаления из рейтинга.'); }
+    }
   }
 
   const xp = totalXp(state.workouts);
@@ -391,7 +484,6 @@ export default function App() {
     check('early_bird', hasEarly);
     check('night_owl', hasLate);
 
-    // Группировка по месяцам для "Идеального месяца"
     const months: Record<string, number> = {};
     state.workouts.forEach(w => {
       const d = new Date(w.endedAt);
@@ -1184,36 +1276,114 @@ export default function App() {
 
         {tab === 'quest' && <section>
           <p className="eyebrow">ПРОГРЕСС И НАГРАДЫ</p>
-          <h1>Награды.</h1>
-          <p className="intro">Достижения открываются автоматически. Тренировки от 30 минут идут в зачёт.</p>
-          <div className={`quest-card ${levelInfo.isMax ? 'max-level-card' : ''}`}>
-            <div className="quest-icon">{levelInfo.isMax ? <Crown size={28} /> : <Trophy size={28} />}</div>
-            <p className="eyebrow">ТВОЙ РАНГ</p>
-            <h2>{levelInfo.rank} · Уровень {level}</h2>
-            {!levelInfo.isMax ? (
-              <>
-                <div className="xp-line"><span>{levelInfo.currentXp} / {levelInfo.nextLevelXp} XP</span><span>{levelInfo.nextLevelXp - levelInfo.currentXp} до уровня</span></div>
-                <div className="progress-track"><span style={{ width: `${(levelInfo.currentXp / levelInfo.nextLevelXp) * 100}%` }} /></div>
-              </>
-            ) : (
-              <div className="xp-line"><span>Максимальный уровень достигнут!</span><span>{xp} XP всего</span></div>
-            )}
-            <p className="quest-note">{state.workouts.length === 0 ? 'Первая тренировка откроет путь.' : `Тренировок завершено: ${state.workouts.length}.`}</p>
+          <h1>GymQuest.</h1>
+          
+          <div className="library-tabs" style={{ marginBottom: 16 }}>
+            <button className={`library-tab ${questView === 'achievements' ? 'active' : ''}`} onClick={() => setQuestView('achievements')}>
+              <Award size={20} /><span>Награды</span>
+            </button>
+            <button className={`library-tab ${questView === 'leaderboard' ? 'active' : ''}`} onClick={() => setQuestView('leaderboard')}>
+              <Trophy size={20} /><span>Рейтинг</span>
+            </button>
           </div>
-          <SectionTitle title="Достижения" />
-          <div className="achievements-grid">
-            {customAchievements.map(a => {
-              const Icon = a.icon;
-              const unlocked = Boolean(state.unlockedAchievements[a.id]);
-              return (
-                <div key={a.id} className={`achievement ${unlocked ? 'unlocked' : 'locked'}`}>
-                  <div className="achievement-icon"><Icon size={22} /></div>
-                  <b>{a.title}</b>
-                  <small>{a.desc}</small>
+
+          {questView === 'achievements' && (
+            <>
+              <div className={`quest-card ${levelInfo.isMax ? 'max-level-card' : ''}`}>
+                <div className="quest-icon">{levelInfo.isMax ? <Crown size={28} /> : <Trophy size={28} />}</div>
+                <p className="eyebrow">ТВОЙ РАНГ</p>
+                <h2>{levelInfo.rank} · Уровень {level}</h2>
+                {!levelInfo.isMax ? (
+                  <>
+                    <div className="xp-line"><span>{levelInfo.currentXp} / {levelInfo.nextLevelXp} XP</span><span>{levelInfo.nextLevelXp - levelInfo.currentXp} до уровня</span></div>
+                    <div className="progress-track"><span style={{ width: `${(levelInfo.currentXp / levelInfo.nextLevelXp) * 100}%` }} /></div>
+                  </>
+                ) : (
+                  <div className="xp-line"><span>Максимальный уровень достигнут!</span><span>{xp} XP всего</span></div>
+                )}
+                <p className="quest-note">{state.workouts.length === 0 ? 'Первая тренировка откроет путь.' : `Тренировок завершено: ${state.workouts.length}.`}</p>
+              </div>
+              <SectionTitle title="Достижения" />
+              <div className="achievements-grid">
+                {customAchievements.map(a => {
+                  const Icon = a.icon;
+                  const unlocked = Boolean(state.unlockedAchievements[a.id]);
+                  return (
+                    <div key={a.id} className={`achievement ${unlocked ? 'unlocked' : 'locked'}`}>
+                      <div className="achievement-icon"><Icon size={22} /></div>
+                      <b>{a.title}</b>
+                      <small>{a.desc}</small>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {questView === 'leaderboard' && (
+            <>
+              <div className="settings-group" style={{ marginBottom: 16 }}>
+                <div className="setting-row">
+                  <div className="setting-icon"><Trophy size={17} /></div>
+                  <div>
+                    <b>Участвовать в рейтинге</b>
+                    <small>Твои имя, аватар и статы будут видны другим</small>
+                  </div>
+                  <button 
+                    className={`toggle-switch ${state.settings.showInLeaderboard ? 'active' : ''}`}
+                    onClick={toggleLeaderboardParticipation}
+                  >
+                    <span className="toggle-knob" />
+                  </button>
                 </div>
-              );
-            })}
-          </div>
+              </div>
+
+              {state.settings.showInLeaderboard ? (
+                <>
+                  <div className="library-tabs" style={{ marginBottom: 12 }}>
+                    <button className={`library-tab ${leaderboardMetric === 'totalXp' ? 'active' : ''}`} onClick={() => setLeaderboardMetric('totalXp')} style={{ minHeight: 50, fontSize: 12 }}>По XP</button>
+                    <button className={`library-tab ${leaderboardMetric === 'weeklyVolume' ? 'active' : ''}`} onClick={() => setLeaderboardMetric('weeklyVolume')} style={{ minHeight: 50, fontSize: 12 }}>Объём (нед)</button>
+                    <button className={`library-tab ${leaderboardMetric === 'streak' ? 'active' : ''}`} onClick={() => setLeaderboardMetric('streak')} style={{ minHeight: 50, fontSize: 12 }}>Серия</button>
+                  </div>
+                  
+                  <div className="panel leaderboard-panel">
+                    {leaderboardLoading ? (
+                      <div className="leaderboard-loading">Загрузка...</div>
+                    ) : leaderboardData.length === 0 ? (
+                      <Empty title="Пока никого нет" text="Стань первым в рейтинге!" />
+                    ) : (
+                      leaderboardData.map((p, idx) => {
+                        const isMe = p.uid === user?.uid;
+                        let valueDisplay = '';
+                        if (leaderboardMetric === 'totalXp') valueDisplay = `${p.totalXp} XP`;
+                        else if (leaderboardMetric === 'weeklyVolume') valueDisplay = `${fmt(p.weeklyVolume)} кг`;
+                        else if (leaderboardMetric === 'streak') valueDisplay = `${p.streak} дн.`;
+                        
+                        return (
+                          <div key={p.uid} className={`leaderboard-row ${isMe ? 'is-me' : ''}`}>
+                            <div className="leaderboard-rank">{idx + 1}</div>
+                            <div className="leaderboard-avatar">
+                              {p.avatar ? <img src={p.avatar} alt="" /> : (p.displayName[0] || 'А').toUpperCase()}
+                            </div>
+                            <div className="leaderboard-info">
+                              <b>{p.displayName} {isMe && '(Ты)'}</b>
+                              <small>{p.rank} · Ур. {p.level}</small>
+                            </div>
+                            <div className="leaderboard-value">{valueDisplay}</div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="sync-warning" style={{ textAlign: 'center', padding: 24 }}>
+                  <Trophy size={32} style={{ margin: '0 auto 12px', opacity: 0.5 }} />
+                  <p>Включи тумблер выше, чтобы увидеть рейтинг других пользователей и показать свои результаты.</p>
+                </div>
+              )}
+            </>
+          )}
         </section>}
 
         {tab === 'profile' && <section>
@@ -1245,14 +1415,14 @@ export default function App() {
                 <div className="ring-setting-color" style={{ background: '#ff6482' }} />
                 <div className="ring-setting-body">
                   <select className="ring-setting-select" value={state.settings.ring1.metric} onChange={e => updateRingMetric('ring1', e.target.value as RingMetric)}>{RING_METRICS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}</select>
-                                    <div className="ring-setting-goal"><span>Цель:</span><RingGoalInput value={state.settings.ring1.goal} onChange={v => updateRingGoal('ring1', v)} /><span className="ring-setting-unit">{ring1Info.unit}</span></div>
+                  <div className="ring-setting-goal"><span>Цель:</span><RingGoalInput value={state.settings.ring1.goal} onChange={v => updateRingGoal('ring1', v)} /><span className="ring-setting-unit">{ring1Info.unit}</span></div>
                 </div>
               </div>
               <div className="ring-setting">
                 <div className="ring-setting-color" style={{ background: '#d0f477' }} />
                 <div className="ring-setting-body">
                   <select className="ring-setting-select" value={state.settings.ring2.metric} onChange={e => updateRingMetric('ring2', e.target.value as RingMetric)}>{RING_METRICS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}</select>
-                                    <div className="ring-setting-goal"><span>Цель:</span><RingGoalInput value={state.settings.ring2.goal} onChange={v => updateRingGoal('ring2', v)} /><span className="ring-setting-unit">{ring2Info.unit}</span></div>
+                  <div className="ring-setting-goal"><span>Цель:</span><RingGoalInput value={state.settings.ring2.goal} onChange={v => updateRingGoal('ring2', v)} /><span className="ring-setting-unit">{ring2Info.unit}</span></div>
                 </div>
               </div>
             </div>
@@ -1402,6 +1572,41 @@ export default function App() {
   );
 }
 
+function RingGoalInput({ value, onChange }: { value: number; onChange: (val: number) => void }) {
+  const [localValue, setLocalValue] = useState(String(value));
+
+  useEffect(() => {
+    setLocalValue(String(value));
+  }, [value]);
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setLocalValue(e.target.value);
+    const num = Number(e.target.value);
+    if (e.target.value !== '' && !isNaN(num) && num > 0) {
+      onChange(num);
+    }
+  }
+
+  function handleBlur() {
+    if (localValue === '' || isNaN(Number(localValue)) || Number(localValue) <= 0) {
+      setLocalValue(String(value));
+    } else {
+      onChange(Number(localValue));
+    }
+  }
+
+  return (
+    <input
+      type="number"
+      className="ring-setting-input"
+      value={localValue}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      min={1}
+    />
+  );
+}
+
 function CategorySelect({ value, onChange, categories }: { value: string; onChange: (v: string) => void; categories: string[]; }) {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
@@ -1506,39 +1711,5 @@ function ProgressChart({ points }: { points: { date: number; value: number }[] }
         <text x={coords[coords.length - 1].x} y={H - 10} textAnchor="end" className="chart-label">{fmtShort(coords[coords.length - 1].date)}</text>
       </svg>
     </div>
-  );
-}
-function RingGoalInput({ value, onChange }: { value: number; onChange: (val: number) => void }) {
-  const [localValue, setLocalValue] = useState(String(value));
-
-  useEffect(() => {
-    setLocalValue(String(value));
-  }, [value]);
-
-  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setLocalValue(e.target.value);
-    const num = Number(e.target.value);
-    if (e.target.value !== '' && !isNaN(num) && num > 0) {
-      onChange(num);
-    }
-  }
-
-  function handleBlur() {
-    if (localValue === '' || isNaN(Number(localValue)) || Number(localValue) <= 0) {
-      setLocalValue(String(value));
-    } else {
-      onChange(Number(localValue));
-    }
-  }
-
-  return (
-    <input
-      type="number"
-      className="ring-setting-input"
-      value={localValue}
-      onChange={handleChange}
-      onBlur={handleBlur}
-      min={1}
-    />
   );
 }
