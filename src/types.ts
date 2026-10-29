@@ -17,7 +17,7 @@ export type Program = {
 
 export type RingMetric =
   | 'workouts_week' | 'sets_week' | 'volume_week' | 'minutes_week' | 'xp_week'
-  | 'workouts_30d' | 'sets_30d' | 'volume_30d'
+  | 'workouts_month' | 'sets_month' | 'volume_month'
   | 'streak';
 
 export type RingSetting = { metric: RingMetric; goal: number };
@@ -30,6 +30,7 @@ export type AppState = {
   exercises: Exercise[];
   programs: Program[];
   customCategories: string[];
+  unlockedAchievements: Record<string, number>;
   settings: {
     restSeconds: number;
     ring1: RingSetting;
