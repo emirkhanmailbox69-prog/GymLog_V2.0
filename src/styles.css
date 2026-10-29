@@ -1355,3 +1355,71 @@ h3{font:600 16px/1.3 -apple-system,sans-serif;margin-bottom:6px}
   .chart-stat-label { font-size: 9px; }
   .chart-stat-date { font-size: 9px; }
 }
+/* ===== Геймификация 2.0: Кольца ===== */
+.rings-card.all-closed {
+  border: 1px solid rgba(208, 244, 119, 0.4);
+  box-shadow: 0 0 20px rgba(208, 244, 119, 0.1);
+}
+.ring-legend-row.closed b {
+  color: var(--lime);
+}
+.ring-check {
+  vertical-align: middle;
+  margin-left: 4px;
+  color: var(--lime);
+}
+.ring-check-center {
+  animation: pulse-check 2s infinite ease-in-out;
+}
+@keyframes pulse-check {
+  0% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.8; }
+}
+
+/* ===== Геймификация 2.0: Золотой календарь ===== */
+.calendar-ideal {
+  border: 1px solid rgba(242, 187, 72, 0.4);
+  box-shadow: 0 0 30px rgba(242, 187, 72, 0.15);
+}
+.calendar-month-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.calendar-month.gold-text {
+  background: linear-gradient(135deg, #F2BB48, #FFDF8E, #F2BB48);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 800;
+}
+.calendar-ideal-badge {
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #000;
+  background: linear-gradient(135deg, #F2BB48, #FFDF8E);
+  padding: 2px 8px;
+  border-radius: 6px;
+  box-shadow: 0 0 10px rgba(242, 187, 72, 0.4);
+}
+
+/* Золотые дни (когда неделя закрыта) */
+.calendar-day.gold-week {
+  border-color: rgba(242, 187, 72, 0.6) !important;
+  color: #F2BB48;
+}
+.calendar-day.gold-week.has-workout {
+  border-color: #F2BB48 !important;
+  background: rgba(242, 187, 72, 0.1);
+}
+.calendar-day.gold-week.selected {
+  background: #F2BB48;
+  color: #000;
+  border-color: #F2BB48;
+}
+.calendar-day.gold-week.selected .calendar-day-num {
+  color: #000;
+}
