@@ -166,6 +166,7 @@ export default function App() {
   const [emailAuthLoading, setEmailAuthLoading] = useState(false);
   const [emailAuthError, setEmailAuthError] = useState<string | null>(null);
 
+  // === Справочники и фильтры (объявлены ДО использования) ===
   const allCategories = useMemo(() => {
     const set = new Set<string>(DEFAULT_CATEGORIES);
     (state.customCategories ?? []).forEach(c => set.add(c));
@@ -178,6 +179,39 @@ export default function App() {
 
   const isUserCategory = (cat: string) => !DEFAULT_CATEGORIES.includes(cat);
 
+  const filteredExercises = useMemo(() => state.exercises.filter(e => 
+    `${e.name} ${e.muscle} ${e.equipment}`.toLocaleLowerCase('ru-RU').includes(pickerQuery.toLocaleLowerCase('ru-RU'))
+  ), [state.exercises, pickerQuery]);
+
+  const filteredProgramExercises = useMemo(() => {
+    const q = programSearch.toLowerCase().trim();
+    if (!q) return state.exercises;
+    return state.exercises.filter(e => `${e.name} ${e.muscle} ${e.equipment}`.toLowerCase().includes(q));
+  }, [state.exercises, programSearch]);
+
+  const groupedExercises = useMemo(() => {
+    const groups: Record<string, Exercise[]> = {};
+    for (const e of state.exercises) {
+      const cat = normalizeMuscle(e.muscle) || 'Без категории';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(e);
+    }
+    for (const cat in groups) {
+      groups[cat].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    }
+    return groups;
+  }, [state.exercises]);
+
+  const orderedCategories = useMemo(() => {
+    const result: string[] = [];
+    const seen = new Set<string>();
+    for (const c of DEFAULT_CATEGORIES) { result.push(c); seen.add(c); }
+    for (const c of (state.customCategories ?? [])) { if (!seen.has(c)) { result.push(c); seen.add(c); } }
+    for (const c of Object.keys(groupedExercises)) { if (!seen.has(c)) { result.push(c); seen.add(c); } }
+    return result;
+  }, [state.customCategories, groupedExercises]);
+
+  // === Эффекты ===
   useEffect(() => {
     if (!saveState(state)) notify('Не удалось сохранить локально. Экспортируй резервную копию.');
   }, [state]);
@@ -245,21 +279,12 @@ export default function App() {
   const monthlyVolume = validMonthWorkouts.reduce((n, w) => n + volume(w), 0);
 
   const streak = (() => {
-    // Учитываем только валидные тренировки (>= 30 мин) и уникальные дни
     const validDays = new Set(state.workouts.filter(isValidWorkout).map(w => new Date(w.endedAt).toDateString()));
     if (validDays.size === 0) return 0;
-    
     let s = 0;
     const d = new Date();
-    // Проверяем, была ли тренировка сегодня. Если нет, начинаем проверку со вчера (стрик еще жив до конца дня)
-    if (!validDays.has(d.toDateString())) {
-      d.setDate(d.getDate() - 1);
-    }
-    
-    while (validDays.has(d.toDateString())) {
-      s++;
-      d.setDate(d.getDate() - 1);
-    }
+    if (!validDays.has(d.toDateString())) d.setDate(d.getDate() - 1);
+    while (validDays.has(d.toDateString())) { s++; d.setDate(d.getDate() - 1); }
     return s;
   })();
 
@@ -279,17 +304,11 @@ export default function App() {
 
   function updateRingMetric(which: 'ring1' | 'ring2', metric: RingMetric) {
     const info = getRingMetricInfo(metric);
-    setState(s => ({
-      ...s,
-      settings: { ...s.settings, [which]: { metric, goal: info.defaultGoal } }
-    }));
+    setState(s => ({ ...s, settings: { ...s.settings, [which]: { metric, goal: info.defaultGoal } } }));
   }
 
   function updateRingGoal(which: 'ring1' | 'ring2', goal: number) {
-    setState(s => ({
-      ...s,
-      settings: { ...s.settings, [which]: { ...s.settings[which], goal: Math.max(1, goal || 1) } }
-    }));
+    setState(s => ({ ...s, settings: { ...s.settings, [which]: { ...s.settings[which], goal: Math.max(1, goal || 1) } } }));
   }
 
   const ring1Info = getRingMetricInfo(state.settings.ring1.metric);
@@ -301,13 +320,11 @@ export default function App() {
   const isRing2Closed = ring2Value >= state.settings.ring2.goal;
 
   // === Достижения (Геймификация 2.0) ===
-  // Проверяем, какие ачивки уже открыты, и если есть новые — сохраняем их в state.
   useEffect(() => {
     const newAch: Record<string, number> = {};
     let hasNew = false;
     const ts = Date.now();
 
-    // Хелпер для проверки
     const check = (id: string, condition: boolean) => {
       if (condition && !state.unlockedAchievements[id]) {
         newAch[id] = ts;
@@ -317,8 +334,6 @@ export default function App() {
 
     const totalVol = state.workouts.reduce((n, w) => n + volume(w), 0);
     const totalSets = state.workouts.reduce((n, w) => n + setCount(w), 0);
-    
-    // Идеальная неделя: минимум 4 валидные тренировки на этой неделе
     const isPerfectWeek = validWeekWorkouts.length >= 4; 
     
     check('first', state.workouts.length >= 1);
@@ -338,7 +353,7 @@ export default function App() {
     }
   }, [state.workouts, streak, validWeekWorkouts.length, validMonthWorkouts.length, state.unlockedAchievements]);
 
-  // === Календарь (Золотые недели) ===
+  // === Календарь ===
   const workoutsByDay = useMemo(() => {
     const map: Record<string, Workout[]> = {};
     for (const w of state.workouts) {
@@ -349,14 +364,9 @@ export default function App() {
     return map;
   }, [state.workouts]);
 
-  const calendarCells = useMemo(
-    () => buildCalendarGrid(calendarDate.getFullYear(), calendarDate.getMonth()),
-    [calendarDate]
-  );
-
+  const calendarCells = useMemo(() => buildCalendarGrid(calendarDate.getFullYear(), calendarDate.getMonth()), [calendarDate]);
   const todayKey = dayKeyFromDate(new Date());
 
-  // Вычисляем закрытые недели
   const closedWeekStarts = useMemo(() => {
     const weeks: Record<number, Workout[]> = {};
     for (const w of state.workouts) {
@@ -367,7 +377,7 @@ export default function App() {
     }
     const closed = new Set<number>();
     for (const [ws, workouts] of Object.entries(weeks)) {
-      if (workouts.length >= 4) closed.add(Number(ws)); // 4 тренировки = золотая неделя
+      if (workouts.length >= 4) closed.add(Number(ws));
     }
     return closed;
   }, [state.workouts]);
@@ -378,16 +388,11 @@ export default function App() {
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     
-    // Не показываем идеальный месяц, если он еще не закончился (кроме тестов)
-    // if (Date.now() < lastDay.getTime()) return false;
-
     let current = getStartOfWeek(firstDay);
     const end = lastDay.getTime();
     let weekCount = 0;
-    let closedCount = 0;
 
     while (current <= end) {
-      // Проверяем только полные недели, которые начались в этом месяце
       if (new Date(current).getMonth() === month) {
         weekCount++;
         if (!closedWeekStarts.has(current)) return false;
@@ -434,7 +439,7 @@ export default function App() {
     if (!selectedDay) { setCalendarDate(new Date()); setSelectedDay(todayKey); }
   }
 
-  // ... (функции patchActive, cloneExercise, startWorkout и т.д. остались прежними)
+  // === Функции ===
   function patchActive(updater: (active: ActiveWorkout) => ActiveWorkout) {
     setState(s => s.activeWorkout ? { ...s, activeWorkout: updater(s.activeWorkout) } : s);
   }
@@ -738,34 +743,7 @@ export default function App() {
     { id: 'profile', label: 'Профиль', icon: CircleUserRound }
   ];
 
-  const orderedCategories = useMemo(() => {
-    const result: string[] = [];
-    const seen = new Set<string>();
-    for (const c of DEFAULT_CATEGORIES) { result.push(c); seen.add(c); }
-    for (const c of (state.customCategories ?? [])) { if (!seen.has(c)) { result.push(c); seen.add(c); } }
-    for (const c of Object.keys(groupedExercises)) { if (!seen.has(c)) { result.push(c); seen.add(c); } }
-    return result;
-  }, [state.customCategories, groupedExercises]);
-
   const isRegistered = Boolean(user && !user.isAnonymous);
-
-  // Сетка упражнений
-  const filteredExercises = useMemo(() => state.exercises.filter(e => `${e.name} ${e.muscle} ${e.equipment}`.toLocaleLowerCase('ru-RU').includes(pickerQuery.toLocaleLowerCase('ru-RU'))), [state.exercises, pickerQuery]);
-  const filteredProgramExercises = useMemo(() => {
-    const q = programSearch.toLowerCase().trim();
-    if (!q) return state.exercises;
-    return state.exercises.filter(e => `${e.name} ${e.muscle} ${e.equipment}`.toLowerCase().includes(q));
-  }, [state.exercises, programSearch]);
-  const groupedExercises = useMemo(() => {
-    const groups: Record<string, Exercise[]> = {};
-    for (const e of state.exercises) {
-      const cat = normalizeMuscle(e.muscle) || 'Без категории';
-      if (!groups[cat]) groups[cat] = [];
-      groups[cat].push(e);
-    }
-    for (const cat in groups) groups[cat].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-    return groups;
-  }, [state.exercises]);
 
   const customAchievements = [
     { id: 'first', icon: Award, title: 'Первый шаг', desc: 'Заверши тренировку' },
@@ -1406,7 +1384,6 @@ function ActivityRings({ rings }: { rings: { percent: number; color: string; clo
           </g>
         );
       })}
-      {/* Галочка в центре, если все кольца закрыты */}
       {rings.every(r => r.closed || r.percent >= 1) && (
         <g className="ring-check-center">
           <circle cx="100" cy="100" r="28" fill="rgba(208, 244, 119, 0.15)" />
