@@ -16,7 +16,7 @@ export function initialState(): AppState {
     unlockedAchievements: {},
     settings: {
       restSeconds: 90,
-      ring1: { metric: 'workouts_week', goal: 4 },
+      ring1: { metric: 'workouts_week', goal: 3 },
       ring2: { metric: 'sets_week', goal: 50 }
     }
   };
