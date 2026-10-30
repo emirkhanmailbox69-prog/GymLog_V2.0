@@ -804,7 +804,7 @@ export default function App() {
     cancelProgramEdit();
   }
 
-  function makeWorkoutFromProgramDay(program: Program, day: ProgramDay): WorkoutExercise[] {
+   function makeWorkoutFromProgramDay(day: ProgramDay): WorkoutExercise[] {
     return day.exercises.map(pe => ({
       id: uid(),
       exerciseId: pe.exerciseId,
@@ -816,8 +816,8 @@ export default function App() {
     }));
   }
 
-  function startWorkoutFromProgram(program: Program, day: ProgramDay) {
-    const exercises = makeWorkoutFromProgramDay(program, day);
+    function startWorkoutFromProgram(program: Program, day: ProgramDay) {
+    const exercises = makeWorkoutFromProgramDay(day); // <--- вот тут убрали program
     setState(s => ({ ...s, activeWorkout: {
       id: uid(),
       name: program.days.length > 1 ? `${program.name} · ${day.name}` : program.name,
