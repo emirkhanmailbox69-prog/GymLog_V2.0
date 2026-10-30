@@ -1548,10 +1548,11 @@ export default function App() {
                         else if (leaderboardMetric === 'weeklyVolume') valueDisplay = `${fmt(p.weeklyVolume)} кг`;
                         else if (leaderboardMetric === 'streak') valueDisplay = `${p.streak} дн.`;
                         
+                        const isMaxLevel = p.level >= 70;
                         return (
                           <div key={p.uid} className={`leaderboard-row ${isMe ? 'is-me' : ''}`}>
                             <div className="leaderboard-rank">{idx + 1}</div>
-                            <div className="leaderboard-avatar">
+                            <div className={`leaderboard-avatar ${isMaxLevel ? 'max-level-avatar' : ''}`}>
                               {p.avatar ? <img src={p.avatar} alt="" /> : (p.displayName[0] || 'А').toUpperCase()}
                             </div>
                             <div className="leaderboard-info">
