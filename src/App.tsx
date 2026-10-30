@@ -5,7 +5,7 @@ import {
   Moon, Pencil, Plus, RefreshCw, Save, ShieldCheck, Star, Target, Trash2, TrendingUp, Trophy, X, Zap
 } from 'lucide-react';
 import type { User } from 'firebase/auth';
-import type { ActiveWorkout, AppState, Exercise, Program, PublicProfile, RingMetric, SetEntry, Tab, Workout, WorkoutExercise } from './types';
+import type { ActiveWorkout, AppState, Exercise, Program, ProgramDay, ProgramExercise, ProgramGoal, ProgramSetTemplate, PublicProfile, RingMetric, SetEntry, Tab, Workout, WorkoutExercise } from './types';
 import { loadState, saveState, downloadBackup, ensureState } from './storage';
 import { starterExercises } from './data';
 import {
@@ -143,13 +143,16 @@ const DEFAULT_EXERCISE_IDS = new Set(starterExercises.map(e => e.id));
 const isDefaultExercise = (id: string) => DEFAULT_EXERCISE_IDS.has(id);
 const isValidWorkout = (w: Workout) => (w.endedAt - w.startedAt) >= 30 * 60 * 1000;
 
+type PickerTarget = { type: 'workout' } | { type: 'programDay'; dayId: string };
+
 export default function App() {
   const [state, setState] = useState<AppState>(() => ensureState(loadState()));
   const [user, setUser] = useState<User | null>(null);
   const [tab, setTab] = useState<Tab>('home');
   const [toast, setToast] = useState('');
 
-  const [pickerOpen, setPickerOpen] = useState(false);
+  // Тренировка
+  const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null);
   const [pickerQuery, setPickerQuery] = useState('');
   const [pickerNewCategory, setPickerNewCategory] = useState(DEFAULT_CATEGORIES[0]);
   const [openNotes, setOpenNotes] = useState<Record<string, boolean>>({});
@@ -166,10 +169,12 @@ export default function App() {
   const [leaderboardData, setLeaderboardData] = useState<PublicProfile[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
 
+  // История
   const [historyView, setHistoryView] = useState<'list' | 'calendar'>('list');
   const [calendarDate, setCalendarDate] = useState<Date>(() => new Date());
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
+  // Программы
   const [programsView, setProgramsView] = useState<'list' | 'library'>('list');
   const [libraryTab, setLibraryTab] = useState<'browse' | 'add'>('browse');
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
@@ -177,22 +182,25 @@ export default function App() {
   const [editingProgramId, setEditingProgramId] = useState<string | null>(null);
   const [programName, setProgramName] = useState('');
   const [programNote, setProgramNote] = useState('');
-  const [programExerciseIds, setProgramExerciseIds] = useState<string[]>([]);
-  const [programSearch, setProgramSearch] = useState('');
-  const [programCustomExName, setProgramCustomExName] = useState('');
-  const [programCustomExCategory, setProgramCustomExCategory] = useState(DEFAULT_CATEGORIES[0]);
-  const [showProgramCustomEx, setShowProgramCustomEx] = useState(false);
-
+  const [programGoal, setProgramGoal] = useState<ProgramGoal | ''>('');
+  const [programDays, setProgramDays] = useState<ProgramDay[]>([]);
+  const [programPickerOpen, setProgramPickerOpen] = useState<Program | null>(null);
+  
+  // Библиотека
   const [exerciseName, setExerciseName] = useState('');
   const [exerciseMuscle, setExerciseMuscle] = useState(DEFAULT_CATEGORIES[0]);
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
 
+  // Профиль
+  const [profileView, setProfileView] = useState<'main' | 'instructions'>('main');
   const [emailAuthOpen, setEmailAuthOpen] = useState(false);
   const [emailAuthMode, setEmailAuthMode] = useState<'signup' | 'signin' | 'reset'>('signup');
   const [emailValue, setEmailValue] = useState('');
   const [passwordValue, setPasswordValue] = useState('');
   const [emailAuthLoading, setEmailAuthLoading] = useState(false);
   const [emailAuthError, setEmailAuthError] = useState<string | null>(null);
+
+  const pickerOpen = pickerTarget !== null;
 
   const allCategories = useMemo(() => {
     const set = new Set<string>(DEFAULT_CATEGORIES);
@@ -209,12 +217,6 @@ export default function App() {
   const filteredExercises = useMemo(() => state.exercises.filter(e => 
     `${e.name} ${e.muscle} ${e.equipment}`.toLocaleLowerCase('ru-RU').includes(pickerQuery.toLocaleLowerCase('ru-RU'))
   ), [state.exercises, pickerQuery]);
-
-  const filteredProgramExercises = useMemo(() => {
-    const q = programSearch.toLowerCase().trim();
-    if (!q) return state.exercises;
-    return state.exercises.filter(e => `${e.name} ${e.muscle} ${e.equipment}`.toLowerCase().includes(q));
-  }, [state.exercises, programSearch]);
 
   const groupedExercises = useMemo(() => {
     const groups: Record<string, Exercise[]> = {};
@@ -277,7 +279,7 @@ export default function App() {
     }
   }, [tab]);
 
-  // Эффект обновления публичного профиля при синхронизации
+  // Эффект обновления публичного профиля
   useEffect(() => {
     if (!user || !state.settings.showInLeaderboard) return;
     
@@ -338,7 +340,6 @@ export default function App() {
     setState(s => ({ ...s, settings: { ...s.settings, showInLeaderboard: newVal } }));
     
     if (newVal) {
-      // Сразу пушим при включении
       const xp = totalXp(state.workouts);
       const lvlInfo = getLevelInfo(xp);
       const currentWeekStart = getStartOfWeek(new Date());
@@ -431,7 +432,6 @@ export default function App() {
 
   const isRing1Closed = ring1Value >= state.settings.ring1.goal;
   const isRing2Closed = ring2Value >= state.settings.ring2.goal;
-  
   const isLevelGlowing = !levelInfo.isMax && (levelInfo.currentXp / levelInfo.nextLevelXp) >= 0.9;
 
   useEffect(() => {
@@ -586,6 +586,7 @@ export default function App() {
     if (!selectedDay) { setCalendarDate(new Date()); setSelectedDay(todayKey); }
   }
 
+  // === ФУНКЦИИ ТРЕНИРОВКИ ===
   function patchActive(updater: (active: ActiveWorkout) => ActiveWorkout) {
     setState(s => s.activeWorkout ? { ...s, activeWorkout: updater(s.activeWorkout) } : s);
   }
@@ -603,17 +604,10 @@ export default function App() {
     notify(`Скопировано из «${source.name}»`);
   }
 
-  function startWorkout(program?: Program) {
-    const chosen = program ? state.exercises.filter(e => program.exerciseIds.includes(e.id)) : [];
-    setState(s => ({ ...s, activeWorkout: { id: uid(), name: program?.name ?? 'Силовая тренировка', startedAt: Date.now(), exercises: chosen.map(makeWorkoutExercise) } }));
+  function startWorkout() {
+    setState(s => ({ ...s, activeWorkout: { id: uid(), name: 'Силовая тренировка', startedAt: Date.now(), exercises: [] } }));
     setTab('workout');
-    notify(program ? `Начата программа «${program.name}»` : 'Тренировка начата');
-  }
-
-  function addExerciseToWorkout(exercise: Exercise) {
-    patchActive(a => ({ ...a, exercises: [...a.exercises, makeWorkoutExercise(exercise)] }));
-    setPickerOpen(false);
-    setPickerQuery('');
+    notify('Тренировка начата');
   }
 
   function updateSet(exerciseId: string, setId: string, patch: Partial<SetEntry>) {
@@ -623,33 +617,6 @@ export default function App() {
   function toggleNote(exerciseId: string, setId: string) {
     const key = `${exerciseId}-${setId}`;
     setOpenNotes(prev => ({ ...prev, [key]: !prev[key] }));
-  }
-
-  function getExerciseStats(exerciseId: string) {
-    const sorted = [...state.workouts].reverse();
-    const points: { date: number; value: number }[] = [];
-    let bestWeight = 0, bestReps = 0, bestDate: number | null = null, best1RM = 0, totalWorkouts = 0;
-
-    for (const w of sorted) {
-      const ex = w.exercises.find(e => e.exerciseId === exerciseId);
-      if (!ex) continue;
-      const doneSets = ex.sets.filter(s => s.done);
-      if (doneSets.length === 0) continue;
-      totalWorkouts++;
-
-      let maxWeightInWorkout = 0;
-      for (const s of doneSets) {
-        const wt = Number(s.weight) || 0;
-        const rp = Number(s.reps) || 0;
-        if (wt > maxWeightInWorkout) maxWeightInWorkout = wt;
-        if (wt <= 0 || rp <= 0) continue;
-        if (wt > bestWeight || (wt === bestWeight && rp > bestReps)) { bestWeight = wt; bestReps = rp; bestDate = w.endedAt; }
-        const epley = wt * (1 + rp / 30);
-        if (epley > best1RM) best1RM = epley;
-      }
-      if (maxWeightInWorkout > 0) points.push({ date: w.endedAt, value: maxWeightInWorkout });
-    }
-    return { points: points.slice(-12), bestWeight, bestReps, bestDate, best1RM: Math.round(best1RM * 10) / 10, totalWorkouts };
   }
 
   function finishWorkout() {
@@ -681,42 +648,201 @@ export default function App() {
     notify('История очищена.');
   }
 
+  function getExerciseStats(exerciseId: string) {
+    const sorted = [...state.workouts].reverse();
+    const points: { date: number; value: number }[] = [];
+    let bestWeight = 0, bestReps = 0, bestDate: number | null = null, best1RM = 0, totalWorkouts = 0;
+
+    for (const w of sorted) {
+      const ex = w.exercises.find(e => e.exerciseId === exerciseId);
+      if (!ex) continue;
+      const doneSets = ex.sets.filter(s => s.done);
+      if (doneSets.length === 0) continue;
+      totalWorkouts++;
+
+      let maxWeightInWorkout = 0;
+      for (const s of doneSets) {
+        const wt = Number(s.weight) || 0;
+        const rp = Number(s.reps) || 0;
+        if (wt > maxWeightInWorkout) maxWeightInWorkout = wt;
+        if (wt <= 0 || rp <= 0) continue;
+        if (wt > bestWeight || (wt === bestWeight && rp > bestReps)) { bestWeight = wt; bestReps = rp; bestDate = w.endedAt; }
+        const epley = wt * (1 + rp / 30);
+        if (epley > best1RM) best1RM = epley;
+      }
+      if (maxWeightInWorkout > 0) points.push({ date: w.endedAt, value: maxWeightInWorkout });
+    }
+    return { points: points.slice(-12), bestWeight, bestReps, bestDate, best1RM: Math.round(best1RM * 10) / 10, totalWorkouts };
+  }
+
+  // === ФУНКЦИИ ПИКЕРА ===
+  function openPickerForWorkout() { setPickerTarget({ type: 'workout' }); }
+  function openPickerForProgramDay(dayId: string) { setPickerTarget({ type: 'programDay', dayId }); }
+  function closePicker() { setPickerTarget(null); setPickerQuery(''); }
+
+  function addSelectedExerciseToTarget(exercise: Exercise) {
+    if (!pickerTarget) return;
+    if (pickerTarget.type === 'workout') {
+      patchActive(a => ({ ...a, exercises: [...a.exercises, makeWorkoutExercise(exercise)] }));
+    } else if (pickerTarget.type === 'programDay') {
+      addExerciseToProgramDay(pickerTarget.dayId, exercise);
+    }
+    closePicker();
+  }
+
+  function addCustomInPicker(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const existing = state.exercises.find(e => e.name.toLowerCase() === trimmed.toLowerCase());
+    if (existing) { addSelectedExerciseToTarget(existing); return; }
+    const category = pickerNewCategory.trim();
+    const exercise: Exercise = { id: uid(), name: trimmed, muscle: category, equipment: 'Пользовательское' };
+    setState(s => ({ ...s, exercises: [...s.exercises, exercise] }));
+    if (category) ensureCategoryRegistered(category);
+    addSelectedExerciseToTarget(exercise);
+  }
+
+  // === ФУНКЦИИ ПРОГРАММ ===
   function cancelProgramEdit() {
-    setEditingProgramId(null); setProgramName(''); setProgramNote(''); setProgramExerciseIds([]); setProgramSearch('');
-    setProgramCustomExName(''); setProgramCustomExCategory(DEFAULT_CATEGORIES[0]); setShowProgramCustomEx(false); setShowProgramBuilder(false);
+    setEditingProgramId(null);
+    setProgramName('');
+    setProgramNote('');
+    setProgramGoal('');
+    setProgramDays([]);
+    setShowProgramBuilder(false);
   }
 
   function startEditProgram(p: Program) {
-    setEditingProgramId(p.id); setProgramName(p.name); setProgramNote(p.note || ''); setProgramExerciseIds(p.exerciseIds);
-    setProgramSearch(''); setShowProgramCustomEx(false); setShowProgramBuilder(true); window.scrollTo({ top: 0, behavior: 'smooth' });
+    setEditingProgramId(p.id);
+    setProgramName(p.name);
+    setProgramNote(p.note || '');
+    setProgramGoal(p.goal || '');
+    setProgramDays(JSON.parse(JSON.stringify(p.days)));
+    setShowProgramBuilder(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function makeProgramExercise(exercise: Exercise): ProgramExercise {
+    return {
+      id: uid(),
+      exerciseId: exercise.id,
+      name: exercise.name,
+      sets: [
+        { id: uid(), weight: '', reps: '' },
+        { id: uid(), weight: '', reps: '' },
+        { id: uid(), weight: '', reps: '' }
+      ]
+    };
+  }
+
+  function addProgramDay() {
+    setProgramDays(prev => [...prev, { id: uid(), name: `День ${prev.length + 1}`, exercises: [] }]);
+  }
+
+  function removeProgramDay(dayId: string) {
+    setProgramDays(prev => prev.filter(d => d.id !== dayId));
+  }
+
+  function updateProgramDay(dayId: string, patch: Partial<ProgramDay>) {
+    setProgramDays(prev => prev.map(d => d.id === dayId ? { ...d, ...patch } : d));
+  }
+
+  function addExerciseToProgramDay(dayId: string, exercise: Exercise) {
+    setProgramDays(prev => prev.map(d => d.id === dayId ? { ...d, exercises: [...d.exercises, makeProgramExercise(exercise)] } : d));
+  }
+
+  function removeExerciseFromProgramDay(dayId: string, peId: string) {
+    setProgramDays(prev => prev.map(d => d.id === dayId ? { ...d, exercises: d.exercises.filter(pe => pe.id !== peId) } : d));
+  }
+
+  function updateProgramSet(dayId: string, peId: string, setId: string, patch: Partial<ProgramSetTemplate>) {
+    setProgramDays(prev => prev.map(d => d.id === dayId ? {
+      ...d,
+      exercises: d.exercises.map(pe => pe.id === peId ? {
+        ...pe, sets: pe.sets.map(s => s.id === setId ? { ...s, ...patch } : s)
+      } : pe)
+    } : d));
+  }
+
+  function addSetToProgram(dayId: string, peId: string) {
+    setProgramDays(prev => prev.map(d => d.id === dayId ? {
+      ...d,
+      exercises: d.exercises.map(pe => pe.id === peId ? {
+        ...pe, sets: [...pe.sets, { id: uid(), weight: '', reps: '' }]
+      } : pe)
+    } : d));
+  }
+
+  function removeSetFromProgram(dayId: string, peId: string, setId: string) {
+    setProgramDays(prev => prev.map(d => d.id === dayId ? {
+      ...d,
+      exercises: d.exercises.map(pe => pe.id === peId ? {
+        ...pe, sets: pe.sets.filter(s => s.id !== setId)
+      } : pe)
+    } : d));
   }
 
   function addProgram() {
     const name = programName.trim();
-    if (!name || programExerciseIds.length === 0) { notify('Укажи название и добавь упражнения.'); return; }
+    if (!name) { notify('Введи название программы.'); return; }
+    const daysWithExercises = programDays.filter(d => d.exercises.length > 0);
+    if (daysWithExercises.length === 0) { notify('Добавь хотя бы одно упражнение.'); return; }
+
+    const goal = programGoal || undefined;
     const note = programNote.trim() || undefined;
+
     if (editingProgramId) {
-      setState(s => ({ ...s, programs: s.programs.map(p => p.id === editingProgramId ? { ...p, name, note, exerciseIds: programExerciseIds } : p) }));
+      const existing = state.programs.find(p => p.id === editingProgramId);
+      const updated: Program = { id: editingProgramId, name, goal, note, days: daysWithExercises, createdAt: existing?.createdAt || Date.now() };
+      setState(s => ({ ...s, programs: s.programs.map(p => p.id === editingProgramId ? updated : p) }));
       notify('Программа обновлена.');
     } else {
-      const program: Program = { id: uid(), name, note, exerciseIds: programExerciseIds, createdAt: Date.now() };
+      const program: Program = { id: uid(), name, goal, note, days: daysWithExercises, createdAt: Date.now() };
       setState(s => ({ ...s, programs: [...s.programs, program] }));
       notify('Программа сохранена.');
     }
     cancelProgramEdit();
   }
 
-  function addCustomExerciseFromProgram() {
-    const name = programCustomExName.trim();
-    if (!name) { notify('Введи название.'); return; }
-    if (state.exercises.some(e => e.name.toLowerCase() === name.toLowerCase())) { notify('Уже есть.'); return; }
-    const category = programCustomExCategory.trim();
-    const exercise: Exercise = { id: uid(), name, muscle: category, equipment: 'Пользовательское' };
-    setState(s => ({ ...s, exercises: [...s.exercises, exercise] }));
-    if (category) ensureCategoryRegistered(category);
-    setProgramExerciseIds(ids => [...ids, exercise.id]);
-    setProgramCustomExName(''); setProgramCustomExCategory(DEFAULT_CATEGORIES[0]); setShowProgramCustomEx(false);
-    notify('Добавлено.');
+  function makeWorkoutFromProgramDay(program: Program, day: ProgramDay): WorkoutExercise[] {
+    return day.exercises.map(pe => ({
+      id: uid(),
+      exerciseId: pe.exerciseId,
+      name: pe.name,
+      collapsed: false,
+      sets: pe.sets.length > 0
+        ? pe.sets.map(ps => ({ id: uid(), weight: ps.weight, reps: ps.reps, done: false }))
+        : [emptySet(), emptySet(), emptySet()]
+    }));
+  }
+
+  function startWorkoutFromProgram(program: Program, day: ProgramDay) {
+    const exercises = makeWorkoutFromProgramDay(program, day);
+    setState(s => ({ ...s, activeWorkout: {
+      id: uid(),
+      name: program.days.length > 1 ? `${program.name} · ${day.name}` : program.name,
+      startedAt: Date.now(),
+      exercises
+    } }));
+    setTab('workout');
+    notify(`Начата «${program.name}»`);
+  }
+
+  function handleStartProgram(program: Program) {
+    if (program.days.length === 0) { notify('В программе нет тренировок.'); return; }
+    if (program.days.length === 1) { startWorkoutFromProgram(program, program.days[0]); }
+    else { setProgramPickerOpen(program); }
+  }
+
+  // === ОБЩИЕ ФУНКЦИИ ===
+  function ensureCategoryRegistered(cat: string) {
+    const trimmed = cat.trim();
+    if (!trimmed) return;
+    setState(s => {
+      const list = s.customCategories ?? [];
+      if (list.includes(trimmed) || DEFAULT_CATEGORIES.includes(trimmed)) return s;
+      return { ...s, customCategories: [...list, trimmed] };
+    });
   }
 
   function addCustomExercise() {
@@ -730,28 +856,6 @@ export default function App() {
     setExerciseName('');
     if (category) setExpandedCategories(prev => ({ ...prev, [normalizeMuscle(category) || 'Без категории']: true }));
     notify('Упражнение добавлено.');
-  }
-
-  function addCustomInPicker(name: string) {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    const existing = state.exercises.find(e => e.name.toLowerCase() === trimmed.toLowerCase());
-    if (existing) { addExerciseToWorkout(existing); return; }
-    const category = pickerNewCategory.trim();
-    const exercise: Exercise = { id: uid(), name: trimmed, muscle: category, equipment: 'Пользовательское' };
-    setState(s => ({ ...s, exercises: [...s.exercises, exercise] }));
-    if (category) ensureCategoryRegistered(category);
-    addExerciseToWorkout(exercise);
-  }
-
-  function ensureCategoryRegistered(cat: string) {
-    const trimmed = cat.trim();
-    if (!trimmed) return;
-    setState(s => {
-      const list = s.customCategories ?? [];
-      if (list.includes(trimmed) || DEFAULT_CATEGORIES.includes(trimmed)) return s;
-      return { ...s, customCategories: [...list, trimmed] };
-    });
   }
 
   function saveEditedExercise() {
@@ -770,7 +874,7 @@ export default function App() {
   function deleteExercise(exercise: Exercise) {
     if (isDefaultExercise(exercise.id)) { notify('Встроенные нельзя удалять.'); return; }
     if (!window.confirm(`Удалить «${exercise.name}»?`)) return;
-    setState(s => ({ ...s, exercises: s.exercises.filter(x => x.id !== exercise.id), programs: s.programs.map(p => ({ ...p, exerciseIds: p.exerciseIds.filter(id => id !== exercise.id) })) }));
+    setState(s => ({ ...s, exercises: s.exercises.filter(x => x.id !== exercise.id), programs: s.programs.map(p => ({ ...p, days: p.days.map(d => ({ ...d, exercises: d.exercises.filter(pe => pe.exerciseId !== exercise.id) })) })) }));
     notify('Удалено.');
   }
 
@@ -795,7 +899,6 @@ export default function App() {
   }
 
   function toggleCategory(cat: string) { setExpandedCategories(prev => ({ ...prev, [cat]: !prev[cat] })); }
-  function toggleProgramExercise(id: string) { setProgramExerciseIds(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]); }
 
   function exportData() { downloadBackup(state); notify('Бэкап подготовлен.'); }
   
@@ -998,7 +1101,7 @@ export default function App() {
               <button className="button button-secondary" onClick={() => startFromWorkout(state.workouts[0])}><RefreshCw size={15} /> Повторить последнюю</button>
               <button className="button button-secondary" onClick={() => setHistoryPickerOpen(true)}><History size={15} /> Из истории</button>
             </div>}
-            {state.programs.length > 0 && <div className="quick-programs">{state.programs.map(p => <button key={p.id} className="button button-secondary" onClick={() => startWorkout(p)}>{p.name} <span>↗</span></button>)}</div>}
+            {state.programs.length > 0 && <div className="quick-programs">{state.programs.map(p => <button key={p.id} className="button button-secondary" onClick={() => handleStartProgram(p)}>{p.name} <span>↗</span></button>)}</div>}
           </div> : <>
             <div className="workout-meta"><div><Clock3 size={16} /><span>Начата {localDate(currentWorkout.startedAt)}, {localTime(currentWorkout.startedAt)}</span></div><span>{currentWorkout.exercises.length} упражнений</span></div>
             <div className="workout-timer">
@@ -1006,7 +1109,7 @@ export default function App() {
               <span className="workout-timer-value">{formatTimer(now - currentWorkout.startedAt)}</span>
             </div>
             <label className="field-label">Название тренировки<input className="field" value={currentWorkout.name} onChange={e => patchActive(a => ({ ...a, name: e.target.value }))} maxLength={60} /></label>
-            <div className="section-heading"><h2>Упражнения</h2><button className="icon-button" onClick={() => setPickerOpen(true)} aria-label="Добавить"><Plus size={20} /></button></div>
+            <div className="section-heading"><h2>Упражнения</h2><button className="icon-button" onClick={() => openPickerForWorkout()} aria-label="Добавить"><Plus size={20} /></button></div>
             {currentWorkout.exercises.length === 0 && <Empty title="Пока нет упражнений" text="Добавь первое упражнение из библиотеки." />}
             {currentWorkout.exercises.map((exercise, index) => <article className="exercise-card" key={exercise.id}>
               <div className="exercise-title">
@@ -1041,7 +1144,7 @@ export default function App() {
                 <button className="add-set" onClick={() => patchActive(a => ({ ...a, exercises: a.exercises.map(e => e.id === exercise.id ? { ...e, sets: [...e.sets, emptySet()] } : e) }))}><Plus size={15} /> Добавить подход</button>
               </div>}
             </article>)}
-            <button className="button button-secondary full-width" onClick={() => setPickerOpen(true)}><Plus size={17} /> Добавить упражнение</button>
+            <button className="button button-secondary full-width" onClick={() => openPickerForWorkout()}><Plus size={17} /> Добавить упражнение</button>
             <div className="finish-bar"><div><b>{setCount(currentWorkout)}</b><small>выполнено подходов</small></div><button className={`button button-primary ${finishing ? 'is-finishing' : ''}`} onClick={finishWorkout} disabled={finishing}>{finishing ? 'Сохраняем…' : <>Завершить <Check size={17} /></>}</button></div>
             <button className="text-danger" onClick={() => { if (window.confirm('Отменить тренировку?')) { setState(s => ({ ...s, activeWorkout: null })); notify('Отменена.'); } }}>Отменить тренировку</button>
           </>}
@@ -1059,48 +1162,128 @@ export default function App() {
           <button className="button button-primary full-width" onClick={() => { if (showProgramBuilder) cancelProgramEdit(); else setShowProgramBuilder(true); }}>
             <Plus size={17} /> {showProgramBuilder ? 'Скрыть билдер' : 'Создать программу'}
           </button>
+          
           {showProgramBuilder && <div className="panel builder">
-            <div className="section-heading" style={{ marginTop: 0 }}><h2>{editingProgramId ? 'Редактирование' : 'Новая программа'}</h2>{editingProgramId && <button className="text-link" onClick={cancelProgramEdit}>Отмена</button>}</div>
-            <label className="field-label">Название<input className="field" placeholder="Например, Верх тела A" value={programName} onChange={e => setProgramName(e.target.value)} maxLength={60} /></label>
-            <label className="field-label">Примечание<textarea className="program-note-textarea" placeholder="Например: отдых 90 сек" value={programNote} onChange={e => setProgramNote(e.target.value)} rows={2} maxLength={500} /></label>
-            <p className="eyebrow">ВЫБЕРИ УПРАЖНЕНИЯ ({programExerciseIds.length} выбрано)</p>
-            <div className="selection-list-search"><input className="field" placeholder="Поиск..." value={programSearch} onChange={e => setProgramSearch(e.target.value)} /></div>
-            {!showProgramCustomEx && (<button className="add-set" style={{ marginBottom: 10 }} onClick={() => setShowProgramCustomEx(true)}><Plus size={15} /> Добавить своё упражнение</button>)}
-            {showProgramCustomEx && (
-              <div className="program-custom-form">
-                <input className="field" placeholder="Название" value={programCustomExName} onChange={e => setProgramCustomExName(e.target.value)} maxLength={80} />
-                <CategorySelect value={programCustomExCategory} onChange={(v) => { setProgramCustomExCategory(v); if (v) ensureCategoryRegistered(v); }} categories={allCategories} />
-                <div className="program-custom-actions">
-                  <button className="button button-secondary" onClick={() => { setShowProgramCustomEx(false); setProgramCustomExName(''); setProgramCustomExCategory(DEFAULT_CATEGORIES[0]); }}>Отмена</button>
-                  <button className="button button-primary" onClick={addCustomExerciseFromProgram}><Plus size={15} /> Добавить</button>
+            <div className="section-heading" style={{ marginTop: 0 }}>
+              <h2>{editingProgramId ? 'Редактирование' : 'Новая программа'}</h2>
+              {editingProgramId && <button className="text-link" onClick={cancelProgramEdit}>Отмена</button>}
+            </div>
+
+            <label className="field-label">Название
+              <input className="field" placeholder="Например, Сплит A" value={programName} onChange={e => setProgramName(e.target.value)} maxLength={60} />
+            </label>
+
+            <label className="field-label">Цель
+              <select className="field" value={programGoal} onChange={e => setProgramGoal(e.target.value as ProgramGoal | '')}>
+                <option value="">Без цели</option>
+                <option value="strength">На силу</option>
+                <option value="mass">На массу</option>
+                <option value="endurance">На выносливость</option>
+                <option value="other">Другое</option>
+              </select>
+            </label>
+
+            <label className="field-label">Примечание
+              <textarea className="program-note-textarea" placeholder="Например: отдых 90 сек между подходами" value={programNote} onChange={e => setProgramNote(e.target.value)} rows={2} maxLength={500} />
+            </label>
+
+            <p className="eyebrow">ТРЕНИРОВОЧНЫЕ ДНИ ({programDays.length})</p>
+
+            <div className="program-days-list">
+              {programDays.map((day, dayIdx) => (
+                <div className="program-day-card" key={day.id}>
+                  <div className="program-day-header">
+                    <input
+                      className="program-day-name"
+                      value={day.name}
+                      onChange={e => updateProgramDay(day.id, { name: e.target.value })}
+                      placeholder={`День ${dayIdx + 1}`}
+                      maxLength={40}
+                    />
+                    {programDays.length > 1 && (
+                      <button className="icon-button subtle" aria-label="Удалить день" onClick={() => {
+                        if (window.confirm(`Удалить «${day.name}»?`)) removeProgramDay(day.id);
+                      }}><Trash2 size={14} /></button>
+                    )}
+                  </div>
+
+                  <div className="program-day-exercises">
+                    {day.exercises.map(pe => (
+                      <div className="program-day-exercise" key={pe.id}>
+                        <div className="program-exercise-header">
+                          <b>{pe.name}</b>
+                          <button className="icon-button subtle" aria-label="Удалить упражнение" onClick={() => removeExerciseFromProgramDay(day.id, pe.id)}><X size={14} /></button>
+                        </div>
+                        <div className="program-sets">
+                          <div className="program-set-header">
+                            <span>СЕТ</span><span>ВЕС</span><span>ПОВТ</span><span></span>
+                          </div>
+                          {pe.sets.map((s, idx) => (
+                            <div className="program-set-row" key={s.id}>
+                              <span className="set-index">{idx + 1}</span>
+                              <input className="set-input" type="number" inputMode="decimal" min="0" step="0.5" placeholder="—" value={s.weight} onChange={e => updateProgramSet(day.id, pe.id, s.id, { weight: e.target.value })} />
+                              <input className="set-input" type="number" inputMode="numeric" min="0" step="1" placeholder="—" value={s.reps} onChange={e => updateProgramSet(day.id, pe.id, s.id, { reps: e.target.value })} />
+                              <button className="icon-button subtle" aria-label="Удалить подход" onClick={() => removeSetFromProgram(day.id, pe.id, s.id)}><X size={12} /></button>
+                            </div>
+                          ))}
+                          <button className="add-set" onClick={() => addSetToProgram(day.id, pe.id)}>
+                            <Plus size={14} /> Добавить подход
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+
+                    <button className="add-set" onClick={() => openPickerForProgramDay(day.id)}>
+                      <Plus size={15} /> Добавить упражнение
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
-            <div className="selection-list">
-              {filteredProgramExercises.length === 0 && <div className="picker-empty">Ничего не найдено</div>}
-              {filteredProgramExercises.map(e => (
-                <label key={e.id} className="selection-row">
-                  <input type="checkbox" checked={programExerciseIds.includes(e.id)} onChange={() => toggleProgramExercise(e.id)} />
-                  <span>{e.name}<small>{normalizeMuscle(e.muscle) || 'Без категории'} · {e.equipment}</small></span>
-                </label>
               ))}
             </div>
-            <button className="button button-primary full-width" onClick={addProgram}><Save size={16} /> {editingProgramId ? 'Сохранить изменения' : 'Сохранить программу'}</button>
+
+            <button className="button button-secondary full-width" onClick={addProgramDay} style={{ marginBottom: 10 }}>
+              <Plus size={15} /> Добавить тренировочный день
+            </button>
+
+            <button className="button button-primary full-width" onClick={addProgram}>
+              <Save size={16} /> {editingProgramId ? 'Сохранить изменения' : 'Сохранить программу'}
+            </button>
           </div>}
-          {state.programs.length ? <div className="program-list">{state.programs.map(p => <article className="panel program-card" key={p.id}>
-            <div className="program-icon"><BookOpen size={20} /></div>
-            <div className="program-main">
-              <h3>{p.name}</h3>
-              <p>{p.exerciseIds.length} упражнений · создана {localDate(p.createdAt)}</p>
-              {p.note && <div className="program-note">{p.note}</div>}
-              <div className="program-exercises">{state.exercises.filter(e => p.exerciseIds.includes(e.id)).slice(0, 4).map(e => e.name).join(' · ')}</div>
-              <div className="program-actions">
-                <button className="button button-primary" onClick={() => startWorkout(p)}>Начать ↗</button>
-                <button className="icon-button subtle" aria-label="Ред." onClick={() => startEditProgram(p)}><Pencil size={15} /></button>
-                <button className="icon-button subtle" aria-label="Уд." onClick={() => { if (window.confirm(`Удалить «${p.name}»?`)) setState(s => ({ ...s, programs: s.programs.filter(x => x.id !== p.id) })); }}><Trash2 size={15} /></button>
-              </div>
-            </div>
-          </article>)}</div> : <Empty title="Программ пока нет" text="Создай шаблон." />}
+
+          {state.programs.length ? <div className="program-list">{state.programs.map(p => {
+            const goalLabel = p.goal === 'strength' ? 'Сила' : p.goal === 'mass' ? 'Масса' : p.goal === 'endurance' ? 'Выносливость' : p.goal === 'other' ? 'Другое' : null;
+            const goalClass = p.goal === 'strength' ? 'goal-strength' : p.goal === 'mass' ? 'goal-mass' : p.goal === 'endurance' ? 'goal-endurance' : 'goal-other';
+            const totalExercises = p.days.reduce((n, d) => n + d.exercises.length, 0);
+            return (
+              <article className="panel program-card" key={p.id}>
+                <div className="program-icon"><BookOpen size={20} /></div>
+                <div className="program-main">
+                  <div className="program-title-row">
+                    <h3 style={{ margin: 0 }}>{p.name}</h3>
+                    {goalLabel && <span className={`program-goal-badge ${goalClass}`}>{goalLabel}</span>}
+                  </div>
+                  <p>
+                    {p.days.length === 1 ? `${totalExercises} упражнений` : `${p.days.length} дн. · ${totalExercises} упр.`} · создана {localDate(p.createdAt)}
+                  </p>
+                  {p.note && <div className="program-note">{p.note}</div>}
+                  {p.days.length === 1 ? (
+                    <div className="program-exercises">{p.days[0].exercises.slice(0, 4).map(pe => pe.name).join(' · ')}</div>
+                  ) : (
+                    <div className="program-days-preview">
+                      {p.days.map((d, i) => <span key={d.id} className="program-day-pill">{i + 1}. {d.name}</span>)}
+                    </div>
+                  )}
+                  <div className="program-actions">
+                    <button className="button button-primary" onClick={() => handleStartProgram(p)}>
+                      {p.days.length === 1 ? 'Начать ↗' : 'Выбрать день ↗'}
+                    </button>
+                    <button className="icon-button subtle" aria-label="Ред." onClick={() => startEditProgram(p)}><Pencil size={15} /></button>
+                    <button className="icon-button subtle" aria-label="Уд." onClick={() => { if (window.confirm(`Удалить «${p.name}»?`)) setState(s => ({ ...s, programs: s.programs.filter(x => x.id !== p.id) })); }}><Trash2 size={15} /></button>
+                  </div>
+                </div>
+              </article>
+            );
+          })}</div> : <Empty title="Программ пока нет" text="Создай шаблон или сплит." />}
         </section>}
 
         {tab === 'programs' && programsView === 'library' && <section>
@@ -1386,7 +1569,11 @@ export default function App() {
           )}
         </section>}
 
-        {tab === 'profile' && <section>
+        {tab === 'profile' && profileView === 'instructions' && (
+          <InstructionsScreen onBack={() => setProfileView('main')} />
+        )}
+
+        {tab === 'profile' && profileView === 'main' && <section>
           <p className="eyebrow">ТВОИ ДАННЫЕ</p>
           <h1>Профиль.</h1>
           <div className="profile-hero">
@@ -1462,6 +1649,17 @@ export default function App() {
               <label className="settings-action"><Save size={17} /><span><b>Импортировать JSON</b><small>Из файла</small></span><input type="file" accept=".json,application/json" hidden onChange={e => importData(e.target.files?.[0])} /></label>
             </div>
           </div>
+
+          <div className="settings-section">
+            <div className="settings-group">
+              <button className="settings-action" onClick={() => setProfileView('instructions')}>
+                <BookOpen size={17} />
+                <span><b>Инструкция</b><small>Как пользоваться приложением</small></span>
+                <ChevronRight size={16} style={{ color: 'var(--muted)' }} />
+              </button>
+            </div>
+          </div>
+
           <div className="notice">Резервная копия JSON — страховка. Облако синхронизирует автоматически.</div>
         </section>}
       </main>
@@ -1470,15 +1668,21 @@ export default function App() {
         {navItems.map(item => {
           const Icon = item.icon;
           const isActive = tab === item.id;
-          return <button key={item.id} className={`tab ${isActive ? 'active' : ''}`} onClick={() => { if (item.id === 'programs' && tab === 'programs' && programsView === 'library') { setProgramsView('list'); setLibraryTab('browse'); return; } setTab(item.id); }}>
+          return <button key={item.id} className={`tab ${isActive ? 'active' : ''}`} onClick={() => { if (item.id === 'programs' && tab === 'programs' && programsView === 'library') { setProgramsView('list'); setLibraryTab('browse'); return; } if (item.id === 'profile' && tab === 'profile' && profileView === 'instructions') { setProfileView('main'); return; } setTab(item.id); }}>
             <Icon size={19} strokeWidth={isActive ? 2.4 : 1.8} /><span>{item.label}</span>
           </button>;
         })}
       </nav>
 
-      {pickerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setPickerOpen(false); }}>
+      {pickerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) closePicker(); }}>
         <section className="picker-modal" role="dialog" aria-modal="true" aria-labelledby="picker-title">
-          <div className="modal-head"><div><p className="eyebrow">БИБЛИОТЕКА</p><h2 id="picker-title">Добавить упражнение</h2></div><button className="icon-button" onClick={() => setPickerOpen(false)} aria-label="Закрыть"><X size={20} /></button></div>
+          <div className="modal-head">
+            <div>
+              <p className="eyebrow">{pickerTarget?.type === 'programDay' ? 'В ПРОГРАММУ' : 'БИБЛИОТЕКА'}</p>
+              <h2 id="picker-title">Добавить упражнение</h2>
+            </div>
+            <button className="icon-button" onClick={closePicker} aria-label="Закрыть"><X size={20} /></button>
+          </div>
           <input className="field" autoFocus placeholder="Поиск или новое" value={pickerQuery} onChange={e => setPickerQuery(e.target.value)} />
           {pickerQuery.trim() && !filteredExercises.some(e => e.name.toLowerCase() === pickerQuery.toLowerCase().trim()) && (
             <div className="picker-add-custom">
@@ -1487,7 +1691,43 @@ export default function App() {
               <button className="picker-add-button" onClick={() => addCustomInPicker(pickerQuery)}><Plus size={16} /> Добавить</button>
             </div>
           )}
-          <div className="picker-list">{filteredExercises.map(e => <button key={e.id} className="picker-row" onClick={() => addExerciseToWorkout(e)}><span><b>{e.name}</b><small>{normalizeMuscle(e.muscle) || 'Без категории'} · {e.equipment}</small></span><Plus size={18} /></button>)}{filteredExercises.length === 0 && <Empty title="Ничего не найдено" text="Введи название — можно добавить как своё." />}</div>
+          <div className="picker-list">
+            {filteredExercises.map(e => (
+              <button key={e.id} className="picker-row" onClick={() => addSelectedExerciseToTarget(e)}>
+                <span><b>{e.name}</b><small>{normalizeMuscle(e.muscle) || 'Без категории'} · {e.equipment}</small></span>
+                <Plus size={18} />
+              </button>
+            ))}
+            {filteredExercises.length === 0 && <Empty title="Ничего не найдено" text="Введи название — можно добавить как своё." />}
+          </div>
+        </section>
+      </div>}
+
+      {programPickerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setProgramPickerOpen(null); }}>
+        <section className="picker-modal" role="dialog" aria-modal="true">
+          <div className="modal-head">
+            <div>
+              <p className="eyebrow">ПРОГРАММА</p>
+              <h2>{programPickerOpen.name}</h2>
+            </div>
+            <button className="icon-button" onClick={() => setProgramPickerOpen(null)} aria-label="Закрыть"><X size={20} /></button>
+          </div>
+          <p className="picker-hint">Выбери тренировочный день:</p>
+          <div className="picker-list">
+            {programPickerOpen.days.map((day, idx) => (
+              <button key={day.id} className="picker-row" onClick={() => {
+                const p = programPickerOpen;
+                setProgramPickerOpen(null);
+                startWorkoutFromProgram(p, day);
+              }}>
+                <span>
+                  <b>{idx + 1}. {day.name}</b>
+                  <small>{day.exercises.length} упражнений</small>
+                </span>
+                <ChevronRight size={16} />
+              </button>
+            ))}
+          </div>
         </section>
       </div>}
 
@@ -1569,6 +1809,57 @@ export default function App() {
       )}
       {toast && <div className="toast" role="status">{toast}</div>}
     </div>
+  );
+}
+
+function InstructionsScreen({ onBack }: { onBack: () => void }) {
+  return (
+    <section className="instructions-screen">
+      <button className="back-link" onClick={onBack}>
+        <ChevronLeft size={18} /> Назад в профиль
+      </button>
+      
+      <p className="eyebrow">СПРАВОЧНИК</p>
+      <h1>Инструкция.</h1>
+      <p className="intro">Всё, что нужно знать о GymLog.</p>
+
+      <div className="instruction-content">
+        <div className="instruction-section">
+          <h3>1. Начало тренировки</h3>
+          <p>На главной нажми <b>«Начать тренировку»</b>. Внутри ты можешь добавить упражнения из библиотеки (кнопка «+»). Если упражнения нет в списке — просто введи его название в поиске, и приложение предложит добавить его как «своё».</p>
+        </div>
+
+        <div className="instruction-section">
+          <h3>2. Запись подходов</h3>
+          <p>Вводи вес и количество повторений. Если ты уже делал это упражнение, нажми на <b>иконку копирования</b> (два листочка) рядом с номером подхода — приложение подставит данные из предыдущего подхода.</p>
+          <p>Нажми на <b>галочку</b>, когда выполнишь подход. Иконка <b>сообщения</b> позволяет оставить заметку (например, «тяжело» или «с запасом»).</p>
+        </div>
+
+        <div className="instruction-section">
+          <h3>3. Программы и сплиты</h3>
+          <p>Во вкладке «Программы» можно создать шаблон. Ты можешь настроить не только список упражнений, но и точные веса и повторения для каждого подхода. Программа может состоять из одного дня или быть недельным сплитом (например, Верх/Низ).</p>
+        </div>
+
+        <div className="instruction-section">
+          <h3>4. История и Календарь</h3>
+          <p>Все завершённые тренировки попадают в «Историю». Там можно посмотреть график прогресса по каждому упражнению (иконка <b>тренда</b>) и узнать свой расчётный максимум на 1 повтор.</p>
+          <p>В календаре отмечаются дни тренировок. Если ты тренируешься регулярно (выполняешь недельную норму), дни загораются <b>золотым</b>, а за идеальный месяц ты получаешь особую награду.</p>
+        </div>
+
+        <div className="instruction-section">
+          <h3>5. GymQuest (Уровни и Рейтинг)</h3>
+          <p>За каждую тренировку ты получаешь опыт (XP). Чем больше подходов — тем больше опыта. Прокачивай уровень от «Новичка» до «Титана».</p>
+          <p>На вкладке «Рейтинг» ты можешь включить участие и сравнивать свои успехи с другими пользователями по XP, объёму или серии дней.</p>
+        </div>
+
+        <div className="instruction-section">
+          <h3>6. Профиль и Данные</h3>
+          <p>В профиле настраиваются главные «Кольца» на главном экране — ты сам выбираешь, за чем следить (тренировки, подходы, объём или серия).</p>
+          <p><b>Важно:</b> Создай аккаунт (Email + Пароль) в блоке «Аккаунт», чтобы твой прогресс сохранялся в облаке. Если ты не создашь аккаунт и удалишь приложение, данные могут быть утеряны.</p>
+          <p>Для дополнительной страховки используй <b>«Экспорт JSON»</b> внизу профиля.</p>
+        </div>
+      </div>
+    </section>
   );
 }
 
