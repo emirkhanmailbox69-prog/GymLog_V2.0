@@ -244,6 +244,12 @@ export default function App() {
     if (!saveState(state)) notify('Не удалось сохранить локально. Экспортируй резервную копию.');
   }, [state]);
 
+    useEffect(() => {
+    if (profileView === 'instructions') {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
+  }, [profileView]);
+  
   useEffect(() => {
     let authResolved = false;
     const unsubscribe = subscribeToAuth((u) => {
