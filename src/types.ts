@@ -8,6 +8,8 @@ export type Workout = {
 export type ActiveWorkout = { id: string; name: string; startedAt: number; exercises: WorkoutExercise[] };
 export type Exercise = { id: string; name: string; muscle: string; equipment: string };
 
+export type BodyMeasurement = { id: string; date: number; weight: number };
+
 export type ProgramGoal = 'strength' | 'mass' | 'endurance' | 'other';
 export type ProgramSetTemplate = { id: string; weight: string; reps: string };
 export type ProgramExercise = {
@@ -47,6 +49,7 @@ export type AppState = {
   programs: Program[];
   customCategories: string[];
   unlockedAchievements: Record<string, number>;
+  measurements: BodyMeasurement[];
   settings: {
     restSeconds: number;
     ring1: RingSetting;
