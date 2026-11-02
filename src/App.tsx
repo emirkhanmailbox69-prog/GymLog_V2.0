@@ -1688,7 +1688,7 @@ export default function App() {
             </div>
           </div>
 
-          {state.measurements.length > 1 && (
+            {state.measurements.length > 0 && (
             <div className="settings-section">
               <p className="settings-header">Динамика веса (кг)</p>
               <div className="settings-group" style={{ padding: '10px 0' }}>
