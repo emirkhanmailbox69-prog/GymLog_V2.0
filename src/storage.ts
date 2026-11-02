@@ -16,6 +16,7 @@ export function initialState(): AppState {
     programs: [],
     customCategories: [],
     unlockedAchievements: {},
+    measurements: [],
     settings: {
       restSeconds: 90,
       ring1: { metric: 'workouts_week', goal: 3 },
@@ -145,6 +146,7 @@ export function ensureState(state: Partial<AppState> | null | undefined): AppSta
     ...state,
     profile: { ...defaults.profile, ...(state.profile || {}) },
     unlockedAchievements: typeof state.unlockedAchievements === 'object' && state.unlockedAchievements !== null ? state.unlockedAchievements : {},
+    measurements: Array.isArray(state.measurements) ? state.measurements : [],
     settings: {
       restSeconds: s.restSeconds ?? defaults.settings.restSeconds,
       ring1: { metric: ring1Metric, goal: s.ring1?.goal ?? defaults.settings.ring1.goal },
