@@ -1164,9 +1164,9 @@ export default function App() {
                   const prevSet = i > 0 ? exercise.sets[i - 1] : null;
                   const isEmptySet = !set.weight && !set.reps;
                   const canCopy = Boolean(prevSet && isEmptySet && (prevSet.weight || prevSet.reps));
-                  return (
+                                    return (
                     <div key={set.id}>
-                                            <div className={`set-row ${set.done ? 'set-done' : ''}`}>
+                      <div className={`set-row ${set.done ? 'set-done' : ''}`}>
                         {canCopy ? (
                           <button className="set-copy" aria-label="Копировать" onClick={() => prevSet && updateSet(exercise.id, set.id, { weight: prevSet.weight, reps: prevSet.reps })}><Copy size={13} /></button>
                         ) : (<span className="set-index">{i + 1}</span>)}
@@ -1200,6 +1200,15 @@ export default function App() {
                         <button className={`set-note-toggle ${set.note && set.note.trim() ? 'has-note' : ''}`} aria-label="Заметка" onClick={() => toggleNote(exercise.id, set.id)}><MessageSquare size={14} /></button>
                         <button className={`set-check ${set.done ? 'checked' : ''}`} aria-label="Выполнено" onClick={() => updateSet(exercise.id, set.id, { done: !set.done })}>{set.done && <Check size={16} />}</button>
                       </div>
+                      {showNote && (
+                        <input
+                          className="set-note-input"
+                          placeholder="Заметка к подходу"
+                          value={set.note || ''}
+                          onChange={e => updateSet(exercise.id, set.id, { note: e.target.value })}
+                        />
+                      )}
+                    </div>
                   );
                 })}
                 <button className="add-set" onClick={() => patchActive(a => ({ ...a, exercises: a.exercises.map(e => e.id === exercise.id ? { ...e, sets: [...e.sets, emptySet()] } : e) }))}><Plus size={15} /> Добавить подход</button>
