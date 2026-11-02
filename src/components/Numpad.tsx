@@ -1,4 +1,4 @@
-import { X, Delete, Check } from 'lucide-react';
+import { Delete, Check } from 'lucide-react';
 
 type Props = {
   value: string;
