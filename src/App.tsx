@@ -931,33 +931,9 @@ export default function App() {
     reader.readAsText(file);
   }
 
-      function updateProfile(name: string, bodyWeight: string) {
+            function updateProfile(name: string, bodyWeight: string) {
     setState(s => {
       const newState = { ...s, profile: { ...s.profile, name, bodyWeight } };
-      const numWeight = parseFloat(bodyWeight.replace(',', '.'));
-      
-      if (!isNaN(numWeight) && numWeight > 0) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const todayTs = today.getTime();
-        
-        const existingIdx = s.measurements.findIndex(m => {
-          const d = new Date(m.date);
-          d.setHours(0, 0, 0, 0);
-          return d.getTime() === todayTs;
-        });
-
-        if (existingIdx >= 0) {
-          const newMeasurements = [...s.measurements];
-          newMeasurements[existingIdx] = { ...newMeasurements[existingIdx], weight: numWeight };
-          newState.measurements = newMeasurements;
-        } else {
-          newState.measurements = [...s.measurements, { id: uid(), date: Date.now(), weight: numWeight }];
-        }
-      }
-      return newState;
-    });
-  }
       const numWeight = parseFloat(bodyWeight.replace(',', '.'));
       
       if (!isNaN(numWeight) && numWeight > 0) {
