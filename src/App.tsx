@@ -15,6 +15,9 @@ import {
 } from './firebase';
 import { useCloudSync } from './hooks/useCloudSync';
 import { ImageCropper } from './components/ImageCropper';
+import { Numpad } from './components/Numpad';
+import { PlateCalculator } from './components/PlateCalculator';
+import { WeightChart } from './components/WeightChart';
 
 const uid = () => crypto.randomUUID();
 const emptySet = (): SetEntry => ({ id: uid(), weight: '', reps: '', done: false });
@@ -199,6 +202,9 @@ export default function App() {
   const [passwordValue, setPasswordValue] = useState('');
   const [emailAuthLoading, setEmailAuthLoading] = useState(false);
   const [emailAuthError, setEmailAuthError] = useState<string | null>(null);
+    // Кастомная панель и калькулятор
+  const [numpadTarget, setNumpadTarget] = useState<{ exId: string; setId: string; field: 'weight' | 'reps' } | null>(null);
+  const [plateCalcTarget, setPlateCalcTarget] = useState<{ exId: string; setId: string; currentWeight: string } | null>(null);
 
   const pickerOpen = pickerTarget !== null;
 
@@ -925,7 +931,33 @@ export default function App() {
     reader.readAsText(file);
   }
 
-  function updateProfile(name: string, bodyWeight: string) { setState(s => ({ ...s, profile: { ...s.profile, name, bodyWeight } })); }
+    function updateProfile(name: string, bodyWeight: string) {
+    setState(s => {
+      const newState = { ...s, profile: { ...s.profile, name, bodyWeight } };
+      const numWeight = parseFloat(bodyWeight.replace(',', '.'));
+      
+      if (!isNaN(numWeight) && numWeight > 0) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayTs = today.getTime();
+        
+        const existingIdx = s.measurements.findIndex(m => {
+          const d = new Date(m.date);
+          d.setHours(0, 0, 0, 0);
+          return d.getTime() === todayTs;
+        });
+
+        if (existingIdx >= 0) {
+          const newMeasurements = [...s.measurements];
+          newMeasurements[existingIdx] = { ...newMeasurements[existingIdx], weight: numWeight };
+          newState.measurements = newMeasurements;
+        } else {
+          newState.measurements = [...s.measurements, { id: uid(), date: Date.now(), weight: numWeight }];
+        }
+      }
+      return newState;
+    });
+  }
   
   async function handleAvatarUpload(file?: File) {
     if (!file || !file.type.startsWith('image/')) return;
@@ -1138,8 +1170,40 @@ export default function App() {
                         {canCopy ? (
                           <button className="set-copy" aria-label="Копировать" onClick={() => prevSet && updateSet(exercise.id, set.id, { weight: prevSet.weight, reps: prevSet.reps })}><Copy size={13} /></button>
                         ) : (<span className="set-index">{i + 1}</span>)}
-                        <input aria-label={`Вес ${i + 1}`} className="set-input" type="number" min="0" step="0.5" placeholder="—" value={set.weight} onChange={e => updateSet(exercise.id, set.id, { weight: e.target.value })} />
-                        <input aria-label={`Повторы ${i + 1}`} className="set-input" type="number" min="0" step="1" placeholder="—" value={set.reps} onChange={e => updateSet(exercise.id, set.id, { reps: e.target.value })} />
+                                              <div className={`set-row ${set.done ? 'set-done' : ''}`}>
+                        {canCopy ? (
+                          <button className="set-copy" aria-label="Копировать" onClick={() => prevSet && updateSet(exercise.id, set.id, { weight: prevSet.weight, reps: prevSet.reps })}><Copy size={13} /></button>
+                        ) : (<span className="set-index">{i + 1}</span>)}
+                        
+                        <input 
+                          aria-label={`Вес ${i + 1}`} 
+                          className="set-input" 
+                          type="number" 
+                          inputMode="none" 
+                          min="0" 
+                          step="0.5" 
+                          placeholder="—" 
+                          value={set.weight} 
+                          onChange={e => updateSet(exercise.id, set.id, { weight: e.target.value })} 
+                          onFocus={() => setNumpadTarget({ exId: exercise.id, setId: set.id, field: 'weight' })}
+                        />
+                        
+                        <input 
+                          aria-label={`Повторы ${i + 1}`} 
+                          className="set-input" 
+                          type="number" 
+                          inputMode="none" 
+                          min="0" 
+                          step="1" 
+                          placeholder="—" 
+                          value={set.reps} 
+                          onChange={e => updateSet(exercise.id, set.id, { reps: e.target.value })} 
+                          onFocus={() => setNumpadTarget({ exId: exercise.id, setId: set.id, field: 'reps' })}
+                        />
+                        
+                        <button className={`set-note-toggle ${set.note && set.note.trim() ? 'has-note' : ''}`} aria-label="Заметка" onClick={() => toggleNote(exercise.id, set.id)}><MessageSquare size={14} /></button>
+                        <button className={`set-check ${set.done ? 'checked' : ''}`} aria-label="Выполнено" onClick={() => updateSet(exercise.id, set.id, { done: !set.done })}>{set.done && <Check size={16} />}</button>
+                      </div>
                         <button className={`set-note-toggle ${set.note && set.note.trim() ? 'has-note' : ''}`} aria-label="Заметка" onClick={() => toggleNote(exercise.id, set.id)}><MessageSquare size={14} /></button>
                         <button className={`set-check ${set.done ? 'checked' : ''}`} aria-label="Выполнено" onClick={() => updateSet(exercise.id, set.id, { done: !set.done })}>{set.done && <Check size={16} />}</button>
                       </div>
@@ -1803,6 +1867,38 @@ export default function App() {
             {emailAuthMode === 'reset' && (<button className="text-link" onClick={() => openEmailAuth('signin')}>← Назад к входу</button>)}
           </section>
         </div>
+      )}
+
+            {numpadTarget && (
+        <Numpad
+          value={
+            numpadTarget.field === 'weight' 
+              ? state.activeWorkout?.exercises.find(e => e.id === numpadTarget.exId)?.sets.find(s => s.id === numpadTarget.setId)?.weight || ''
+              : state.activeWorkout?.exercises.find(e => e.id === numpadTarget.exId)?.sets.find(s => s.id === numpadTarget.setId)?.reps || ''
+          }
+          onChange={(val) => {
+            if (numpadTarget.field === 'weight') {
+              updateSet(numpadTarget.exId, numpadTarget.setId, { weight: val });
+            } else {
+              updateSet(numpadTarget.exId, numpadTarget.setId, { reps: val });
+            }
+          }}
+          onClose={() => setNumpadTarget(null)}
+          onPlateCalc={() => {
+            const w = state.activeWorkout?.exercises.find(e => e.id === numpadTarget.exId)?.sets.find(s => s.id === numpadTarget.setId)?.weight || '';
+            setPlateCalcTarget({ exId: numpadTarget.exId, setId: numpadTarget.setId, currentWeight: w });
+            setNumpadTarget(null);
+          }}
+          isReps={numpadTarget.field === 'reps'}
+        />
+      )}
+
+      {plateCalcTarget && (
+        <PlateCalculator
+          initialWeight={plateCalcTarget.currentWeight}
+          onClose={() => setPlateCalcTarget(null)}
+          onApply={(val) => updateSet(plateCalcTarget.exId, plateCalcTarget.setId, { weight: val })}
+        />
       )}
 
       {finishing && <div className="finish-flash" />}
