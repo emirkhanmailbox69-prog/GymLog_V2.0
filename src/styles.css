@@ -1837,3 +1837,121 @@ h3{font:600 16px/1.3 -apple-system,sans-serif;margin-bottom:6px}
   border: 2px solid #F2BB48;
   box-shadow: 0 0 8px rgba(242, 187, 72, 0.4);
 }
+/* ===== Кастомная панель цифр (Numpad) ===== */
+.numpad-backdrop {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0,0,0,.4);
+}
+.numpad-container {
+  width: min(100%, 680px);
+  background: var(--card);
+  border-radius: 20px 20px 0 0;
+  padding: 12px 16px calc(16px + var(--safe-bottom));
+  box-shadow: 0 -10px 40px rgba(0,0,0,.5);
+  animation: slide-up .2s ease-out;
+}
+@keyframes slide-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.numpad-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.numpad-value {
+  font: 700 32px/1 -apple-system, sans-serif;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.numpad-actions {
+  display: flex;
+  gap: 8px;
+}
+.numpad-action-btn {
+  width: 44px; height: 44px;
+  display: grid; place-items: center;
+  border: 0; border-radius: 12px;
+  background: var(--card-2); color: var(--lime);
+}
+.numpad-quick-add {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.numpad-quick-add button {
+  flex: 1;
+  height: 40px;
+  border: 0; border-radius: 10px;
+  background: rgba(208,244,119,.12);
+  color: var(--lime);
+  font-weight: 700;
+  font-size: 15px;
+}
+.numpad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 8px;
+}
+.numpad-grid button {
+  height: 56px;
+  border: 0; border-radius: 12px;
+  background: var(--card-2);
+  color: var(--text);
+  font-size: 24px;
+  font-weight: 600;
+  display: grid; place-items: center;
+  touch-action: manipulation;
+}
+.numpad-grid button:active { background: #3a3a3c; }
+.numpad-clear { color: var(--danger) !important; }
+
+/* ===== Калькулятор блинов ===== */
+.plate-calc-modal {
+  max-height: 90dvh;
+}
+.plate-result {
+  background: var(--card-2);
+  border-radius: 14px;
+  padding: 16px;
+  text-align: center;
+  margin: 12px 0;
+}
+.plate-hint { font-size: 13px; color: var(--muted); margin: 0 0 10px; }
+.plate-error { font-size: 13px; color: var(--danger); margin: 0; }
+.plate-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+.plate-badge {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #000;
+  box-shadow: 0 2px 5px rgba(0,0,0,.3);
+}
+.plate-25 { background: #ff453a; color: #fff; }
+.plate-20 { background: #32d4ff; }
+.plate-15 { background: #ffd60a; }
+.plate-10 { background: #30d158; }
+.plate-5 { background: #fff; }
+.plate-2\.5 { background: #bf5af2; color: #fff; }
+.plate-1\.25 { background: #8e8e93; color: #fff; }
+
+/* ===== График веса тела ===== */
+.weight-chart-wrap {
+  padding: 0 16px;
+}
+.weight-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+}
