@@ -4,10 +4,24 @@ export function WeightChart({ measurements }: { measurements: BodyMeasurement[] 
   // Берем последние 30 записей и сортируем по дате
   const sorted = [...measurements].sort((a, b) => a.date - b.date).slice(-30);
   
-  if (sorted.length < 2) {
+    if (sorted.length === 0) {
     return (
       <div className="empty" style={{ margin: 0, padding: '20px 10px' }}>
-        <p style={{ margin: 0, fontSize: 12 }}>Мало данных. Введи свой вес пару раз, чтобы увидеть график.</p>
+        <p style={{ margin: 0, fontSize: 12 }}>Нет данных. Введи свой вес, чтобы увидеть динамику.</p>
+      </div>
+    );
+  }
+
+  if (sorted.length === 1) {
+    const m = sorted[0];
+    return (
+      <div className="weight-chart-wrap" style={{ textAlign: 'center' }}>
+        <svg viewBox="0 0 300 120" className="weight-chart" aria-hidden="true">
+          <circle cx="150" cy="60" r="6" fill="#32d4ff" />
+          <text x="150" y="45" textAnchor="middle" className="chart-label" style={{ fontSize: 14, fill: '#32d4ff' }}>{m.weight} кг</text>
+          <text x="150" y="85" textAnchor="middle" className="chart-label">{new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' }).format(m.date)}</text>
+        </svg>
+        <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--muted)' }}>Пока одна запись. Добавь ещё, чтобы увидеть график.</p>
       </div>
     );
   }
