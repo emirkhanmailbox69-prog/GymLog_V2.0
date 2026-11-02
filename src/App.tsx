@@ -931,9 +931,33 @@ export default function App() {
     reader.readAsText(file);
   }
 
-    function updateProfile(name: string, bodyWeight: string) {
+      function updateProfile(name: string, bodyWeight: string) {
     setState(s => {
       const newState = { ...s, profile: { ...s.profile, name, bodyWeight } };
+      const numWeight = parseFloat(bodyWeight.replace(',', '.'));
+      
+      if (!isNaN(numWeight) && numWeight > 0) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayTs = today.getTime();
+        
+        const existingIdx = s.measurements.findIndex(m => {
+          const d = new Date(m.date);
+          d.setHours(0, 0, 0, 0);
+          return d.getTime() === todayTs;
+        });
+
+        if (existingIdx >= 0) {
+          const newMeasurements = [...s.measurements];
+          newMeasurements[existingIdx] = { ...newMeasurements[existingIdx], weight: numWeight };
+          newState.measurements = newMeasurements;
+        } else {
+          newState.measurements = [...s.measurements, { id: uid(), date: Date.now(), weight: numWeight }];
+        }
+      }
+      return newState;
+    });
+  }
       const numWeight = parseFloat(bodyWeight.replace(',', '.'));
       
       if (!isNaN(numWeight) && numWeight > 0) {
@@ -1166,11 +1190,7 @@ export default function App() {
                   const canCopy = Boolean(prevSet && isEmptySet && (prevSet.weight || prevSet.reps));
                   return (
                     <div key={set.id}>
-                      <div className={`set-row ${set.done ? 'set-done' : ''}`}>
-                        {canCopy ? (
-                          <button className="set-copy" aria-label="Копировать" onClick={() => prevSet && updateSet(exercise.id, set.id, { weight: prevSet.weight, reps: prevSet.reps })}><Copy size={13} /></button>
-                        ) : (<span className="set-index">{i + 1}</span>)}
-                                              <div className={`set-row ${set.done ? 'set-done' : ''}`}>
+                                            <div className={`set-row ${set.done ? 'set-done' : ''}`}>
                         {canCopy ? (
                           <button className="set-copy" aria-label="Копировать" onClick={() => prevSet && updateSet(exercise.id, set.id, { weight: prevSet.weight, reps: prevSet.reps })}><Copy size={13} /></button>
                         ) : (<span className="set-index">{i + 1}</span>)}
@@ -1204,11 +1224,6 @@ export default function App() {
                         <button className={`set-note-toggle ${set.note && set.note.trim() ? 'has-note' : ''}`} aria-label="Заметка" onClick={() => toggleNote(exercise.id, set.id)}><MessageSquare size={14} /></button>
                         <button className={`set-check ${set.done ? 'checked' : ''}`} aria-label="Выполнено" onClick={() => updateSet(exercise.id, set.id, { done: !set.done })}>{set.done && <Check size={16} />}</button>
                       </div>
-                        <button className={`set-note-toggle ${set.note && set.note.trim() ? 'has-note' : ''}`} aria-label="Заметка" onClick={() => toggleNote(exercise.id, set.id)}><MessageSquare size={14} /></button>
-                        <button className={`set-check ${set.done ? 'checked' : ''}`} aria-label="Выполнено" onClick={() => updateSet(exercise.id, set.id, { done: !set.done })}>{set.done && <Check size={16} />}</button>
-                      </div>
-                      {showNote && (<textarea className="set-note-input" placeholder="Заметка к подходу…" value={set.note || ''} onChange={e => updateSet(exercise.id, set.id, { note: e.target.value })} rows={1} maxLength={300} />)}
-                    </div>
                   );
                 })}
                 <button className="add-set" onClick={() => patchActive(a => ({ ...a, exercises: a.exercises.map(e => e.id === exercise.id ? { ...e, sets: [...e.sets, emptySet()] } : e) }))}><Plus size={15} /> Добавить подход</button>
@@ -1659,13 +1674,43 @@ export default function App() {
               {state.profile.avatar && (<button className="profile-avatar-remove" onClick={removeAvatar}>Удалить фото</button>)}
             </div>
           </div>
-          <div className="settings-section">
+                    <div className="settings-section">
             <p className="settings-header">Личные данные</p>
             <div className="settings-group">
-              <label className="settings-row-input"><span>Имя</span><input className="settings-input" value={state.profile.name} onChange={e => updateProfile(e.target.value, state.profile.bodyWeight)} onBlur={() => updateProfile(state.profile.name.trim() || 'Атлет', state.profile.bodyWeight)} maxLength={40} /></label>
-              <label className="settings-row-input"><span>Вес (кг)</span><input className="settings-input" type="number" inputMode="decimal" min="0" step="0.1" value={state.profile.bodyWeight} onChange={e => updateProfile(state.profile.name, e.target.value)} placeholder="—" /></label>
+              <label className="settings-row-input">
+                <span>Имя</span>
+                <input
+                  className="settings-input"
+                  value={state.profile.name}
+                  onChange={e => updateProfile(e.target.value, state.profile.bodyWeight)}
+                  onBlur={() => updateProfile(state.profile.name.trim() || 'Атлет', state.profile.bodyWeight)}
+                  maxLength={40}
+                />
+              </label>
+              <label className="settings-row-input">
+                <span>Вес (кг)</span>
+                <input
+                  className="settings-input"
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.1"
+                  value={state.profile.bodyWeight}
+                  onChange={e => updateProfile(state.profile.name, e.target.value)}
+                  placeholder="—"
+                />
+              </label>
             </div>
           </div>
+
+          {state.measurements.length > 1 && (
+            <div className="settings-section">
+              <p className="settings-header">Динамика веса (кг)</p>
+              <div className="settings-group" style={{ padding: '10px 0' }}>
+                <WeightChart measurements={state.measurements} />
+              </div>
+            </div>
+          )}
           <div className="settings-section">
             <p className="settings-header">Цели на главной</p>
             <div className="settings-group">
