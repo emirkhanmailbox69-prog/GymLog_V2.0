@@ -55,17 +55,11 @@ export function WheelPicker({ value, onChange, min = 0, max = 200, step = 2.5, l
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', userSelect: 'none' }}>
       {label && <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>{label}</div>}
       
-      {/* ЖЕСТКО ЗАФИКСИРОВАННЫЙ КОНТЕЙНЕР */}
       <div style={{ 
         position: 'relative', height: '220px', width: '140px', 
-        overflow: 'hidden', // Запрещает вылезать за пределы
-        borderRadius: '16px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' 
+        overflow: 'hidden', borderRadius: '16px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' 
       }}>
         
-        {/* Затемнение сверху и снизу */}
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '80px', background: 'linear-gradient(to bottom, #1c1c1e 0%, transparent 100%)', zIndex: 3, pointerEvents: 'none' }} />
-        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '80px', background: 'linear-gradient(to top, #1c1c1e 0%, transparent 100%)', zIndex: 3, pointerEvents: 'none' }} />
-
         {/* Линия по центру */}
         <div style={{ 
           position: 'absolute', top: '50%', left: 0, right: 0, height: `${itemHeight}px`, 
@@ -73,19 +67,19 @@ export function WheelPicker({ value, onChange, min = 0, max = 200, step = 2.5, l
           borderBottom: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.03)', zIndex: 1, pointerEvents: 'none' 
         }} />
 
-        {/* Скролл-зона */}
+        {/* Скролл с маской прозрачности по краям */}
         <div 
           ref={containerRef}
           onScroll={handleScroll}
           className="wheel-scroll-container"
           style={{ 
             height: '100%', width: '100%', 
-            overflowY: 'scroll', 
-            overflowX: 'hidden', // Только вертикально!
+            overflowY: 'scroll', overflowX: 'hidden',
             scrollSnapType: 'y mandatory', padding: '88px 0',
             position: 'relative', zIndex: 2, scrollbarWidth: 'none', msOverflowStyle: 'none',
-            WebkitOverflowScrolling: 'touch',
-            touchAction: 'pan-y' // Палец не сможет скроллить вбок
+            WebkitOverflowScrolling: 'touch', touchAction: 'pan-y',
+            WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 20%, black 80%, transparent 100%)',
+            maskImage: 'linear-gradient(to bottom, transparent 0%, black 20%, black 80%, transparent 100%)'
           }}
         >
           {values.map((val) => {
