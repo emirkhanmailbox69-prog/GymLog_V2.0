@@ -626,6 +626,13 @@ export default function App() {
     patchActive(a => ({ ...a, exercises: a.exercises.map(e => e.id !== exerciseId ? e : { ...e, sets: e.sets.map(s => s.id === setId ? { ...s, ...patch } : s) }) }));
   }
 
+    function removeSet(exerciseId: string, setId: string) {
+    patchActive(a => ({
+      ...a,
+      exercises: a.exercises.map(e => e.id === exerciseId ? { ...e, sets: e.sets.filter(s => s.id !== setId) } : e)
+    }));
+  }
+
   function toggleNote(exerciseId: string, setId: string) {
     const key = `${exerciseId}-${setId}`;
     setOpenNotes(prev => ({ ...prev, [key]: !prev[key] }));
@@ -1203,6 +1210,7 @@ export default function App() {
                         />
                         
                         <button className={`set-note-toggle ${set.note && set.note.trim() ? 'has-note' : ''}`} aria-label="Заметка" onClick={() => toggleNote(exercise.id, set.id)}><MessageSquare size={14} /></button>
+                        <button className="icon-button subtle" style={{ padding: '4px', minHeight: 'auto', color: '#ff6482' }} aria-label="Удалить подход" onClick={() => removeSet(exercise.id, set.id)}><X size={16} /></button>
                         <button className={`set-check ${set.done ? 'checked' : ''}`} aria-label="Выполнено" onClick={() => updateSet(exercise.id, set.id, { done: !set.done })}>{set.done && <Check size={16} />}</button>
                       </div>
                       {showNote && (
