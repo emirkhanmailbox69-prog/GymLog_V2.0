@@ -626,13 +626,6 @@ export default function App() {
     patchActive(a => ({ ...a, exercises: a.exercises.map(e => e.id !== exerciseId ? e : { ...e, sets: e.sets.map(s => s.id === setId ? { ...s, ...patch } : s) }) }));
   }
 
-    function removeSet(exerciseId: string, setId: string) {
-    patchActive(a => ({
-      ...a,
-      exercises: a.exercises.map(e => e.id === exerciseId ? { ...e, sets: e.sets.filter(s => s.id !== setId) } : e)
-    }));
-  }
-
   function toggleNote(exerciseId: string, setId: string) {
     const key = `${exerciseId}-${setId}`;
     setOpenNotes(prev => ({ ...prev, [key]: !prev[key] }));
@@ -1178,7 +1171,7 @@ export default function App() {
                   const canCopy = Boolean(prevSet && isEmptySet && (prevSet.weight || prevSet.reps));
                                     return (
                     <div key={set.id}>
-                                            <div className={`set-row ${set.done ? 'set-done' : ''}`}>
+                      <div className={`set-row ${set.done ? 'set-done' : ''}`}>
                         {canCopy ? (
                           <button className="set-copy" aria-label="Копировать" onClick={() => prevSet && updateSet(exercise.id, set.id, { weight: prevSet.weight, reps: prevSet.reps })}><Copy size={13} /></button>
                         ) : (<span className="set-index">{i + 1}</span>)}
@@ -1209,26 +1202,7 @@ export default function App() {
                           onFocus={() => setNumpadTarget({ exId: exercise.id, setId: set.id, field: 'reps' })}
                         />
                         
-                        {/* Блок с кнопками заметки и удаления */}
-                        <div style={{ display: 'flex', gap: '2px', alignItems: 'center', justifyContent: 'center', width: '100%', overflow: 'hidden' }}>
-                          <button 
-                            className={`set-note-toggle ${set.note && set.note.trim() ? 'has-note' : ''}`} 
-                            style={{ padding: 0, margin: 0, width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }} 
-                            aria-label="Заметка" 
-                            onClick={() => toggleNote(exercise.id, set.id)}
-                          >
-                            <MessageSquare size={14} />
-                          </button>
-                          <button 
-                            className="icon-button subtle" 
-                            style={{ padding: 0, margin: 0, width: '24px', height: '24px', minHeight: 'auto', minWidth: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ff6482', flexShrink: 0 }} 
-                            aria-label="Удалить подход" 
-                            onClick={() => removeSet(exercise.id, set.id)}
-                          >
-                            <X size={16} />
-                          </button>
-                        </div>
-
+                        <button className={`set-note-toggle ${set.note && set.note.trim() ? 'has-note' : ''}`} aria-label="Заметка" onClick={() => toggleNote(exercise.id, set.id)}><MessageSquare size={14} /></button>
                         <button className={`set-check ${set.done ? 'checked' : ''}`} aria-label="Выполнено" onClick={() => updateSet(exercise.id, set.id, { done: !set.done })}>{set.done && <Check size={16} />}</button>
                       </div>
                       {showNote && (
