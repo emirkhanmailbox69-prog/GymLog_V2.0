@@ -155,6 +155,8 @@ export default function App() {
   const [toast, setToast] = useState('');
 
   // Тренировка
+  const [swipedSetId, setSwipedSetId] = useState<string | null>(null);
+  const [touchStartX, setTouchStartX] = useState(0);
   const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null);
   const [pickerQuery, setPickerQuery] = useState('');
   const [pickerNewCategory, setPickerNewCategory] = useState(DEFAULT_CATEGORIES[0]);
@@ -624,6 +626,13 @@ export default function App() {
 
   function updateSet(exerciseId: string, setId: string, patch: Partial<SetEntry>) {
     patchActive(a => ({ ...a, exercises: a.exercises.map(e => e.id !== exerciseId ? e : { ...e, sets: e.sets.map(s => s.id === setId ? { ...s, ...patch } : s) }) }));
+  }
+
+    function removeSet(exerciseId: string, setId: string) {
+    patchActive(a => ({
+      ...a,
+      exercises: a.exercises.map(e => e.id === exerciseId ? { ...e, sets: e.sets.filter(s => s.id !== setId) } : e)
+    }));
   }
 
   function toggleNote(exerciseId: string, setId: string) {
@@ -1169,9 +1178,39 @@ export default function App() {
                   const prevSet = i > 0 ? exercise.sets[i - 1] : null;
                   const isEmptySet = !set.weight && !set.reps;
                   const canCopy = Boolean(prevSet && isEmptySet && (prevSet.weight || prevSet.reps));
-                                    return (
-                    <div key={set.id}>
-                      <div className={`set-row ${set.done ? 'set-done' : ''}`}>
+                                                      return (
+                    <div 
+                      key={set.id} 
+                      style={{ position: 'relative', overflow: 'hidden', borderRadius: '12px', marginBottom: '8px' }}
+                    >
+                      {/* КРАСНАЯ КНОПКА УДАЛЕНИЯ (СПРЯТАНА СПРАВА) */}
+                      <div style={{ 
+                        position: 'absolute', top: 0, right: 0, bottom: 0, width: '70px', 
+                        background: '#ff6482', display: 'flex', alignItems: 'center', justifyContent: 'center' 
+                      }}>
+                        <button 
+                          style={{ background: 'transparent', border: 'none', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}
+                          onClick={() => { removeSet(exercise.id, set.id); setSwipedSetId(null); }}
+                        >
+                          <Trash2 size={20} />
+                        </button>
+                      </div>
+
+                      {/* САМА СТРОКА (СДВИГАЕТСЯ ПРИ СВАЙПЕ) */}
+                      <div 
+                        className={`set-row ${set.done ? 'set-done' : ''}`}
+                        style={{ 
+                          position: 'relative', zIndex: 1, background: 'var(--bg)', margin: 0,
+                          transform: swipedSetId === set.id ? 'translateX(-70px)' : 'translateX(0)',
+                          transition: 'transform 0.2s ease-out'
+                        }}
+                        onTouchStart={(e) => setTouchStartX(e.touches[0].clientX)}
+                        onTouchEnd={(e) => {
+                          const diff = touchStartX - e.changedTouches[0].clientX;
+                          if (diff > 40) setSwipedSetId(set.id); // Свайп влево (открыть)
+                          else if (diff < -40) setSwipedSetId(null); // Свайп вправо (закрыть)
+                        }}
+                      >
                         {canCopy ? (
                           <button className="set-copy" aria-label="Копировать" onClick={() => prevSet && updateSet(exercise.id, set.id, { weight: prevSet.weight, reps: prevSet.reps })}><Copy size={13} /></button>
                         ) : (<span className="set-index">{i + 1}</span>)}
@@ -1205,12 +1244,19 @@ export default function App() {
                         <button className={`set-note-toggle ${set.note && set.note.trim() ? 'has-note' : ''}`} aria-label="Заметка" onClick={() => toggleNote(exercise.id, set.id)}><MessageSquare size={14} /></button>
                         <button className={`set-check ${set.done ? 'checked' : ''}`} aria-label="Выполнено" onClick={() => updateSet(exercise.id, set.id, { done: !set.done })}>{set.done && <Check size={16} />}</button>
                       </div>
+
+                      {/* ПОЛЕ ЗАМЕТКИ (ТОЖЕ СДВИГАЕТСЯ) */}
                       {showNote && (
                         <input
                           className="set-note-input"
                           placeholder="Заметка к подходу"
                           value={set.note || ''}
                           onChange={e => updateSet(exercise.id, set.id, { note: e.target.value })}
+                          style={{
+                            position: 'relative', zIndex: 1, background: 'var(--bg)', margin: 0, width: '100%', boxSizing: 'border-box',
+                            transform: swipedSetId === set.id ? 'translateX(-70px)' : 'translateX(0)',
+                            transition: 'transform 0.2s ease-out'
+                          }}
                         />
                       )}
                     </div>
