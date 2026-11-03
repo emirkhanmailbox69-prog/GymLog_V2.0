@@ -1224,30 +1224,26 @@ export default function App() {
                             <button className="set-copy" aria-label="Копировать" onClick={() => prevSet && updateSet(exercise.id, set.id, { weight: prevSet.weight, reps: prevSet.reps })}><Copy size={13} /></button>
                           ) : (<span className="set-index">{i + 1}</span>)}
                           
-                          <input 
+                            <input 
                             aria-label={`Вес ${i + 1}`} 
                             className="set-input" 
-                            type="number" 
+                            type="text" 
                             inputMode="none" 
-                            min="0" 
-                            step="0.5" 
+                            readOnly
                             placeholder="—" 
                             value={set.weight} 
-                            onChange={e => updateSet(exercise.id, set.id, { weight: e.target.value })} 
-                            onFocus={() => setNumpadTarget({ exId: exercise.id, setId: set.id, field: 'weight' })}
+                            onClick={() => setNumpadTarget({ exId: exercise.id, setId: set.id, field: 'weight' })}
                           />
                           
-                          <input 
+                            <input 
                             aria-label={`Повторы ${i + 1}`} 
                             className="set-input" 
-                            type="number" 
+                            type="text" 
                             inputMode="none" 
-                            min="0" 
-                            step="1" 
+                            readOnly
                             placeholder="—" 
                             value={set.reps} 
-                            onChange={e => updateSet(exercise.id, set.id, { reps: e.target.value })} 
-                            onFocus={() => setNumpadTarget({ exId: exercise.id, setId: set.id, field: 'reps' })}
+                            onClick={() => setNumpadTarget({ exId: exercise.id, setId: set.id, field: 'reps' })}
                           />
                           
                           <button className={`set-note-toggle ${set.note && set.note.trim() ? 'has-note' : ''}`} aria-label="Заметка" onClick={() => toggleNote(exercise.id, set.id)}><MessageSquare size={14} /></button>
