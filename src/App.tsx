@@ -1209,8 +1209,10 @@ export default function App() {
                           onFocus={() => setNumpadTarget({ exId: exercise.id, setId: set.id, field: 'reps' })}
                         />
                         
-                        <button className={`set-note-toggle ${set.note && set.note.trim() ? 'has-note' : ''}`} aria-label="Заметка" onClick={() => toggleNote(exercise.id, set.id)}><MessageSquare size={14} /></button>
-                        <button className="icon-button subtle" style={{ padding: '4px', minHeight: 'auto', color: '#ff6482' }} aria-label="Удалить подход" onClick={() => removeSet(exercise.id, set.id)}><X size={16} /></button>
+                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', justifyContent: 'center' }}>
+                          <button className={`set-note-toggle ${set.note && set.note.trim() ? 'has-note' : ''}`} aria-label="Заметка" onClick={() => toggleNote(exercise.id, set.id)}><MessageSquare size={14} /></button>
+                          <button className="icon-button subtle" style={{ padding: 0, minHeight: 'auto', color: '#ff6482' }} aria-label="Удалить подход" onClick={() => removeSet(exercise.id, set.id)}><X size={16} /></button>
+                        </div>
                         <button className={`set-check ${set.done ? 'checked' : ''}`} aria-label="Выполнено" onClick={() => updateSet(exercise.id, set.id, { done: !set.done })}>{set.done && <Check size={16} />}</button>
                       </div>
                       {showNote && (
