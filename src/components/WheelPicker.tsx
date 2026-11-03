@@ -11,7 +11,7 @@ type Props = {
 
 export function WheelPicker({ value, onChange, min = 0, max = 200, step = 2.5, label }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const itemHeight = 44; // Высота одного элемента
+  const itemHeight = 44;
   const [isScrolling, setIsScrolling] = useState(false);
 
   const values: number[] = [];
@@ -21,7 +21,6 @@ export function WheelPicker({ value, onChange, min = 0, max = 200, step = 2.5, l
 
   useEffect(() => {
     if (containerRef.current) {
-      // Ищем индекс текущего значения, если нет — ищем ближайшее
       let index = values.indexOf(parseFloat(value));
       if (index === -1 && value !== '') {
         const num = parseFloat(value);
@@ -31,7 +30,6 @@ export function WheelPicker({ value, onChange, min = 0, max = 200, step = 2.5, l
         }
       }
       if (index === -1) index = 0;
-      
       containerRef.current.scrollTop = index * itemHeight;
     }
   }, []);
@@ -48,7 +46,7 @@ export function WheelPicker({ value, onChange, min = 0, max = 200, step = 2.5, l
         onChange(String(newValue));
       }
       setIsScrolling(false);
-    }, 120);
+    }, 150);
     
     return () => clearTimeout(timer);
   }
@@ -57,26 +55,31 @@ export function WheelPicker({ value, onChange, min = 0, max = 200, step = 2.5, l
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', userSelect: 'none' }}>
       {label && <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>{label}</div>}
       
-      <div style={{ position: 'relative', height: '220px', width: '100%', maxWidth: '200px' }}>
-        {/* Рамка выделения по центру */}
+      {/* Фиксированная ширина 140px и жесткий контейнер */}
+      <div style={{ position: 'relative', height: '220px', width: '140px', overflow: 'hidden', borderRadius: '16px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+        
+        {/* Градиенты сверху и снизу для эффекта глубины */}
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '80px', background: 'linear-gradient(to bottom, var(--bg) 0%, transparent 100%)', zIndex: 3, pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '80px', background: 'linear-gradient(to top, var(--bg) 0%, transparent 100%)', zIndex: 3, pointerEvents: 'none' }} />
+
+        {/* Линия выделения по центру */}
         <div style={{ 
           position: 'absolute', top: '50%', left: 0, right: 0, height: `${itemHeight}px`, 
           transform: 'translateY(-50%)', borderTop: '1px solid rgba(255,255,255,0.15)', 
-          borderBottom: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.05)', zIndex: 1, pointerEvents: 'none',
-          borderRadius: '8px'
+          borderBottom: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.03)', zIndex: 1, pointerEvents: 'none' 
         }} />
 
-        {/* Само колесо со скроллом и маской прозрачности */}
+        {/* Само колесо */}
         <div 
           ref={containerRef}
           onScroll={handleScroll}
           className="wheel-scroll-container"
           style={{ 
-            height: '100%', width: '100%', overflowY: 'scroll', scrollSnapType: 'y mandatory', 
-            padding: '88px 0', // (220 - 44) / 2 = 88px отступ сверху и снизу
-            position: 'relative', zIndex: 1, scrollbarWidth: 'none', msOverflowStyle: 'none',
-            WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 20%, black 80%, transparent 100%)',
-            maskImage: 'linear-gradient(to bottom, transparent 0%, black 20%, black 80%, transparent 100%)'
+            height: '100%', width: '100%', overflowY: 'scroll', overflowX: 'hidden', 
+            scrollSnapType: 'y mandatory', padding: '88px 0',
+            position: 'relative', zIndex: 2, scrollbarWidth: 'none', msOverflowStyle: 'none',
+            WebkitOverflowScrolling: 'touch', // Плавный скролл на iOS
+            touchAction: 'pan-y' // Разрешаем только вертикальный скролл
           }}
         >
           {values.map((val) => {
@@ -86,12 +89,12 @@ export function WheelPicker({ value, onChange, min = 0, max = 200, step = 2.5, l
                 key={val}
                 style={{ 
                   height: `${itemHeight}px`, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  scrollSnapAlign: 'center', transition: 'all 0.1s ease-out',
-                  fontSize: isSelected ? '28px' : '20px',
+                  scrollSnapAlign: 'center', transition: 'all 0.15s ease-out',
+                  fontSize: isSelected ? '28px' : '18px',
                   fontWeight: isSelected ? 'bold' : 'normal',
                   color: isSelected ? 'var(--lime)' : 'var(--muted)',
-                  opacity: isSelected ? 1 : (isScrolling ? 0.7 : 0.4),
-                  transform: `scale(${isSelected ? 1.1 : 0.9})`
+                  opacity: isSelected ? 1 : (isScrolling ? 0.7 : 0.3),
+                  transform: `scale(${isSelected ? 1.1 : 0.85})`
                 }}
               >
                 {val}
