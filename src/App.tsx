@@ -1105,9 +1105,14 @@ export default function App() {
           {!currentWorkout && state.workouts.length > 0 && (
             <div className="quick-start">
               <button className="quick-start-btn" onClick={() => startFromWorkout(state.workouts[0])}>
-                <RefreshCw size={18} />
-                <div><b>Повторить последнюю</b><small>{state.workouts[0].name} · {localDate(state.workouts[0].endedAt)} · {setCount(state.workouts[0])} подходов</small></div>
-              </button>
+  <RefreshCw size={18} style={{ flexShrink: 0 }} />
+  <div style={{ minWidth: 0, flex: 1, textAlign: 'left' }}>
+    <b>Повторить последнюю</b>
+    <small style={{ display: 'block', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, marginTop: 2 }}>
+      {state.workouts[0].name} · {localDate(state.workouts[0].endedAt)} · {setCount(state.workouts[0])} подходов
+    </small>
+  </div>
+</button>
               <button className="quick-start-btn" onClick={() => setHistoryPickerOpen(true)}>
                 <History size={18} />
                 <div><b>Из истории</b><small>выбрать любую тренировку</small></div>
