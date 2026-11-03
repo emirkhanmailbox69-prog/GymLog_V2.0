@@ -74,13 +74,17 @@ export function subscribeToState(userId: string, callback: (state: AppState | nu
 
 export async function pushStateToCloud(userId: string, state: AppState) {
   const userDoc = doc(db, 'users', userId);
-  await setDoc(userDoc, state);
+  // Очищаем объект от undefined (Firestore их не принимает)
+  const cleanState = JSON.parse(JSON.stringify(state));
+  await setDoc(userDoc, cleanState);
 }
 
 // === Лидерборд ===
 export async function updatePublicProfile(data: PublicProfile) {
   const profileDoc = doc(db, 'publicProfiles', data.uid);
-  await setDoc(profileDoc, data, { merge: true });
+  // Тоже очищаем, так как avatar может быть undefined
+  const cleanData = JSON.parse(JSON.stringify(data));
+  await setDoc(profileDoc, cleanData, { merge: true });
 }
 
 export async function removePublicProfile(uid: string) {
