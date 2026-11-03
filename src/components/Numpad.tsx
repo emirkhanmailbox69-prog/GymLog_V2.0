@@ -34,20 +34,16 @@ export function Numpad({ value, onChange, onClose, onPlateCalc, onDelete, isReps
       <div className="numpad-container" style={{ minHeight: '380px' }}>
         
         <div className="numpad-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            {/* Цифра или прочерк */}
-            <span className="numpad-value">
-              {value ? value : <span style={{ color: 'var(--muted)' }}>—</span>}
-            </span>
-
-            {/* ТОТ САМЫЙ iOS ТУМБЛЕР */}
+          
+          {/* 1. СЛЕВА — тумблер. Намертво зафиксирован, никуда не едет */}
+          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
             <button
               onClick={() => setIsWheelMode(!isWheelMode)}
               style={{
                 width: '51px', height: '31px', borderRadius: '16px',
                 backgroundColor: isWheelMode ? 'var(--lime)' : 'rgba(255,255,255,0.15)',
                 border: 'none', padding: '2px', display: 'flex', alignItems: 'center',
-                cursor: 'pointer', transition: 'background-color 0.3s ease', position: 'relative'
+                cursor: 'pointer', transition: 'background-color 0.3s ease'
               }}
               title="Переключить на барабан"
             >
@@ -60,7 +56,18 @@ export function Numpad({ value, onChange, onClose, onPlateCalc, onDelete, isReps
             </button>
           </div>
 
-          <div className="numpad-actions">
+          {/* 2. ЦЕНТР — цифры. Растягиваются, но тумблер уже стоит на месте */}
+          <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', minWidth: 0, overflow: 'hidden', padding: '0 12px' }}>
+            <span className="numpad-value" style={{ 
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              fontSize: '32px', fontWeight: 'bold', lineHeight: 1
+            }}>
+              {value ? value : <span style={{ color: 'var(--muted)' }}>—</span>}
+            </span>
+          </div>
+
+          {/* 3. СПРАВА — только иконки действий. Прижаты к краю */}
+          <div className="numpad-actions" style={{ flexShrink: 0 }}>
             {onDelete && (
               <button className="numpad-action-btn" onClick={() => { onDelete(); onClose(); }} title="Удалить подход" style={{ color: '#ff6482' }}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
