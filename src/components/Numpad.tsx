@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Delete, Check, ChevronsUpDown } from 'lucide-react';
+import { Delete, Check } from 'lucide-react';
 import { WheelPicker } from './WheelPicker';
 
 type Props = {
@@ -12,7 +12,7 @@ type Props = {
 };
 
 export function Numpad({ value, onChange, onClose, onPlateCalc, onDelete, isReps = false }: Props) {
-  const [isWheelMode, setIsWheelMode] = useState(false); // Состояние тумблера
+  const [isWheelMode, setIsWheelMode] = useState(false);
 
   function handleKey(key: string) {
     if (key === 'back') {
@@ -31,28 +31,13 @@ export function Numpad({ value, onChange, onClose, onPlateCalc, onDelete, isReps
 
   return (
     <div className="numpad-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="numpad-container" style={{ minHeight: '380px' }}>
+      <div className="numpad-container" style={{ minHeight: '400px' }}>
         
         <div className="numpad-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span className="numpad-value">{value || '0'}</span>
-            
-            {/* МАЛЕНЬКИЙ ТУМБЛЕР ПЕРЕКЛЮЧЕНИЯ */}
-            <button 
-              onClick={() => setIsWheelMode(!isWheelMode)}
-              style={{ 
-                background: isWheelMode ? 'var(--lime)' : 'rgba(255,255,255,0.1)',
-                border: 'none', borderRadius: '20px', padding: '6px',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: isWheelMode ? '#000' : 'var(--muted)',
-                transition: 'all 0.2s ease',
-                cursor: 'pointer'
-              }}
-              title={isWheelMode ? "Переключить на цифры" : "Переключить на барабан"}
-            >
-              <ChevronsUpDown size={16} />
-            </button>
-          </div>
+          {/* Вместо нуля — прочерк, если пусто */}
+          <span className="numpad-value">
+            {value ? value : <span style={{ color: 'var(--muted)' }}>—</span>}
+          </span>
 
           <div className="numpad-actions">
             {onDelete && (
@@ -71,9 +56,34 @@ export function Numpad({ value, onChange, onClose, onPlateCalc, onDelete, isReps
           </div>
         </div>
 
-        {/* ЕСЛИ ВКЛЮЧЕН ТУМБЛЕР - ПОКАЗЫВАЕМ КОЛЕСО */}
+        {/* СТИЛЬНЫЙ ПЕРЕКЛЮЧАТЕЛЬ РЕЖИМОВ (КАК В IOS) */}
+        <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: '10px', padding: '4px', margin: '0 16px 16px' }}>
+          <button 
+            onClick={() => setIsWheelMode(false)}
+            style={{ 
+              flex: 1, padding: '10px', borderRadius: '8px', border: 'none', 
+              background: !isWheelMode ? 'rgba(208, 244, 119, 0.15)' : 'transparent', 
+              color: !isWheelMode ? 'var(--lime)' : 'var(--muted)', 
+              fontWeight: !isWheelMode ? 'bold' : 'normal', fontSize: '14px', transition: 'all 0.2s ease' 
+            }}
+          >
+            Клавиатура
+          </button>
+          <button 
+            onClick={() => setIsWheelMode(true)}
+            style={{ 
+              flex: 1, padding: '10px', borderRadius: '8px', border: 'none', 
+              background: isWheelMode ? 'rgba(208, 244, 119, 0.15)' : 'transparent', 
+              color: isWheelMode ? 'var(--lime)' : 'var(--muted)', 
+              fontWeight: isWheelMode ? 'bold' : 'normal', fontSize: '14px', transition: 'all 0.2s ease' 
+            }}
+          >
+            Барабан
+          </button>
+        </div>
+
         {isWheelMode ? (
-          <div style={{ padding: '20px 0', display: 'flex', justifyContent: 'center' }}>
+          <div style={{ padding: '10px 0 20px', display: 'flex', justifyContent: 'center' }}>
             <WheelPicker 
               value={value} 
               onChange={onChange} 
@@ -83,7 +93,6 @@ export function Numpad({ value, onChange, onClose, onPlateCalc, onDelete, isReps
             />
           </div>
         ) : (
-          /* ИНАЧЕ ПОКАЗЫВАЕМ ОБЫЧНУЮ КЛАВИАТУРУ */
           <>
             {!isReps && (
               <div className="numpad-quick-add">
