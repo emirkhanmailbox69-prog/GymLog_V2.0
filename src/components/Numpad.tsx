@@ -31,13 +31,34 @@ export function Numpad({ value, onChange, onClose, onPlateCalc, onDelete, isReps
 
   return (
     <div className="numpad-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="numpad-container" style={{ minHeight: '400px' }}>
+      <div className="numpad-container" style={{ minHeight: '380px' }}>
         
         <div className="numpad-header">
-          {/* Вместо нуля — прочерк, если пусто */}
-          <span className="numpad-value">
-            {value ? value : <span style={{ color: 'var(--muted)' }}>—</span>}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            {/* Цифра или прочерк */}
+            <span className="numpad-value">
+              {value ? value : <span style={{ color: 'var(--muted)' }}>—</span>}
+            </span>
+
+            {/* ТОТ САМЫЙ iOS ТУМБЛЕР */}
+            <button
+              onClick={() => setIsWheelMode(!isWheelMode)}
+              style={{
+                width: '51px', height: '31px', borderRadius: '16px',
+                backgroundColor: isWheelMode ? 'var(--lime)' : 'rgba(255,255,255,0.15)',
+                border: 'none', padding: '2px', display: 'flex', alignItems: 'center',
+                cursor: 'pointer', transition: 'background-color 0.3s ease', position: 'relative'
+              }}
+              title="Переключить на барабан"
+            >
+              <div style={{
+                width: '27px', height: '27px', borderRadius: '50%', backgroundColor: '#fff',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                transform: isWheelMode ? 'translateX(20px)' : 'translateX(0px)',
+                transition: 'transform 0.3s cubic-bezier(0.25, 1, 0.5, 1)'
+              }} />
+            </button>
+          </div>
 
           <div className="numpad-actions">
             {onDelete && (
@@ -54,32 +75,6 @@ export function Numpad({ value, onChange, onClose, onPlateCalc, onDelete, isReps
               <Check size={20} />
             </button>
           </div>
-        </div>
-
-        {/* СТИЛЬНЫЙ ПЕРЕКЛЮЧАТЕЛЬ РЕЖИМОВ (КАК В IOS) */}
-        <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: '10px', padding: '4px', margin: '0 16px 16px' }}>
-          <button 
-            onClick={() => setIsWheelMode(false)}
-            style={{ 
-              flex: 1, padding: '10px', borderRadius: '8px', border: 'none', 
-              background: !isWheelMode ? 'rgba(208, 244, 119, 0.15)' : 'transparent', 
-              color: !isWheelMode ? 'var(--lime)' : 'var(--muted)', 
-              fontWeight: !isWheelMode ? 'bold' : 'normal', fontSize: '14px', transition: 'all 0.2s ease' 
-            }}
-          >
-            Клавиатура
-          </button>
-          <button 
-            onClick={() => setIsWheelMode(true)}
-            style={{ 
-              flex: 1, padding: '10px', borderRadius: '8px', border: 'none', 
-              background: isWheelMode ? 'rgba(208, 244, 119, 0.15)' : 'transparent', 
-              color: isWheelMode ? 'var(--lime)' : 'var(--muted)', 
-              fontWeight: isWheelMode ? 'bold' : 'normal', fontSize: '14px', transition: 'all 0.2s ease' 
-            }}
-          >
-            Барабан
-          </button>
         </div>
 
         {isWheelMode ? (
