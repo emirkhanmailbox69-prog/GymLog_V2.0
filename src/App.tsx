@@ -153,6 +153,8 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [tab, setTab] = useState<Tab>('home');
   const [toast, setToast] = useState('');
+  const [swipedSetId, setSwipedSetId] = useState<string | null>(null);
+  const [touchStartX, setTouchStartX] = useState(0);
 
   // Тренировка
   const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null);
@@ -920,8 +922,8 @@ export default function App() {
     reader.onload = () => {
       try {
         const parsed: unknown = JSON.parse(String(reader.result));
-        if (!parsed || typeof parsed !== 'object' || !('app' in parsed) || parsed.app !== 'GymLog' || !('state' in parsed)) throw new Error('Не бэкап.');
-        const candidate = (parsed as { state: AppState }).state;
+        if (!parsed || typeof parsed !== 'object' || !('' in parsed) || parsed. !== 'GymLog' || !('state' in parsed)) throw new Error('Не бэкап.');
+        const candidate = (parsed as { state: State }).state;
         if (candidate.schemaVersion !== 1 || !Array.isArray(candidate.workouts) || !Array.isArray(candidate.exercises)) throw new Error('Формат не поддерживается.');
         if (!window.confirm('Импорт заменит данные. Продолжить?')) return;
         setState(ensureState(candidate));
@@ -1056,10 +1058,10 @@ export default function App() {
     { id: 'perfect_month', icon: Calendar, title: 'Идеальный месяц', desc: 'Закрыть все недели в месяце' }
   ];
 
-  const appShellClass = levelInfo.isMax ? 'app-shell max-level-gold' : 'app-shell';
+  const ShellClass = levelInfo.isMax ? '-shell max-level-gold' : '-shell';
 
   return (
-    <div className={appShellClass}>
+    <div className={ShellClass}>
       <header className="topbar">
         <button className="brand" onClick={() => setTab('home')} aria-label="На главную">
           <img src={`${import.meta.env.BASE_URL}logo.png`} alt="GymLog" className="brand-mark-img" />
@@ -1170,7 +1172,37 @@ export default function App() {
                   const isEmptySet = !set.weight && !set.reps;
                   const canCopy = Boolean(prevSet && isEmptySet && (prevSet.weight || prevSet.reps));
                                     return (
-                    <div key={set.id}>
+                                        <div 
+                      key={set.id}
+                      style={{ position: 'relative', overflow: 'hidden', borderRadius: '8px', marginBottom: '4px' }}
+                      onTouchStart={(e) => setTouchStartX(e.touches[0].clientX)}
+                      onTouchEnd={(e) => {
+                        const diff = touchStartX - e.changedTouches[0].clientX;
+                        if (diff > 50) setSwipedSetId(swipedSetId === set.id ? null : set.id); // свайп влево
+                        else if (diff < -50) setSwipedSetId(null); // свайп вправо (закрыть)
+                      }}
+                    >
+                      {/* Красная подложка под строкой */}
+                      <div style={{ 
+                        position: 'absolute', top: 0, right: 0, bottom: 0, width: '60px', 
+                        background: '#ff6482', display: 'flex', alignItems: 'center', justifyContent: 'center' 
+                      }}>
+                        <button 
+                          style={{ color: 'white', background: 'transparent', border: 'none' }}
+                          onClick={() => { removeSet(exercise.id, set.id); setSwipedSetId(null); }}
+                        >
+                          <Trash2 size={20} />
+                        </button>
+                      </div>
+
+                      {/* Сама строка, которая будет сдвигаться */}
+                      <div className={`set-row ${set.done ? 'set-done' : ''}`} style={{ 
+                        position: 'relative', 
+                        background: 'var(--bg)', // Цвет фона строки (чтобы перекрыть красное)
+                        zIndex: 1,
+                        transform: swipedSetId === set.id ? 'translateX(-60px)' : 'translateX(0)',
+                        transition: 'transform 0.2s ease-out'
+                      }}>
                       <div className={`set-row ${set.done ? 'set-done' : ''}`}>
                         {canCopy ? (
                           <button className="set-copy" aria-label="Копировать" onClick={() => prevSet && updateSet(exercise.id, set.id, { weight: prevSet.weight, reps: prevSet.reps })}><Copy size={13} /></button>
@@ -1214,6 +1246,7 @@ export default function App() {
                         />
                       )}
                     </div>
+                  </div>
                   );
                 })}
                 <button className="add-set" onClick={() => patchActive(a => ({ ...a, exercises: a.exercises.map(e => e.id === exercise.id ? { ...e, sets: [...e.sets, emptySet()] } : e) }))}><Plus size={15} /> Добавить подход</button>
@@ -1752,7 +1785,7 @@ export default function App() {
             <p className="settings-header">Резервные копии</p>
             <div className="settings-group">
               <button className="settings-action" onClick={exportData}><FileDown size={17} /><span><b>Экспортировать JSON</b><small>Копия на диск</small></span></button>
-              <label className="settings-action"><Save size={17} /><span><b>Импортировать JSON</b><small>Из файла</small></span><input type="file" accept=".json,application/json" hidden onChange={e => importData(e.target.files?.[0])} /></label>
+              <label className="settings-action"><Save size={17} /><span><b>Импортировать JSON</b><small>Из файла</small></span><input type="file" accept=".json,lication/json" hidden onChange={e => importData(e.target.files?.[0])} /></label>
             </div>
           </div>
 
