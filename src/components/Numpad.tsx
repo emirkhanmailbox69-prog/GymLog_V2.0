@@ -31,17 +31,18 @@ export function Numpad({ value, onChange, onClose, onPlateCalc, onDelete, isReps
 
   return (
     <div className="numpad-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="numpad-container" style={{ minHeight: '380px' }}>
+      {/* Фиксированная высота контейнера, чтобы окно не меняло размер */}
+      <div className="numpad-container" style={{ height: '420px', display: 'flex', flexDirection: 'column' }}>
         
-        <div className="numpad-header">
+        <div className="numpad-header" style={{ flexShrink: 0 }}>
           
-          {/* 1. СЛЕВА — тумблер. Намертво зафиксирован, никуда не едет */}
+          {/* 1. СЛЕВА — тумблер. Намертво зафиксирован */}
           <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
             <button
               onClick={() => setIsWheelMode(!isWheelMode)}
               style={{
                 width: '51px', height: '31px', borderRadius: '16px',
-                backgroundColor: isWheelMode ? 'var(--lime)' : 'rgba(255,255,255,0.15)',
+                backgroundColor: isWheelMode ? '#4CD964' : 'rgba(255,255,255,0.15)',
                 border: 'none', padding: '2px', display: 'flex', alignItems: 'center',
                 cursor: 'pointer', transition: 'background-color 0.3s ease'
               }}
@@ -56,17 +57,22 @@ export function Numpad({ value, onChange, onClose, onPlateCalc, onDelete, isReps
             </button>
           </div>
 
-          {/* 2. ЦЕНТР — цифры. Растягиваются, но тумблер уже стоит на месте */}
-          <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', minWidth: 0, overflow: 'hidden', padding: '0 12px' }}>
-            <span className="numpad-value" style={{ 
-              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-              fontSize: '32px', fontWeight: 'bold', lineHeight: 1
-            }}>
-              {value ? value : <span style={{ color: 'var(--muted)' }}>—</span>}
-            </span>
-          </div>
+          {/* 2. ЦЕНТР — цифры. ПОКАЗЫВАЕМ ТОЛЬКО В РЕЖИМЕ КЛАВИАТУРЫ */}
+          {!isWheelMode && (
+            <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', minWidth: 0, overflow: 'hidden', padding: '0 12px' }}>
+              <span className="numpad-value" style={{ 
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                fontSize: '32px', fontWeight: 'bold', lineHeight: 1
+              }}>
+                {value ? value : <span style={{ color: 'var(--muted)' }}>—</span>}
+              </span>
+            </div>
+          )}
 
-          {/* 3. СПРАВА — только иконки действий. Прижаты к краю */}
+          {/* Если барабан включен, цифры в центре не рендерим, оставляем пустое место для отступа */}
+          {isWheelMode && <div style={{ flex: 1 }} />}
+
+          {/* 3. СПРАВА — только иконки действий */}
           <div className="numpad-actions" style={{ flexShrink: 0 }}>
             {onDelete && (
               <button className="numpad-action-btn" onClick={() => { onDelete(); onClose(); }} title="Удалить подход" style={{ color: '#ff6482' }}>
@@ -84,40 +90,43 @@ export function Numpad({ value, onChange, onClose, onPlateCalc, onDelete, isReps
           </div>
         </div>
 
-        {isWheelMode ? (
-          <div style={{ padding: '10px 0 20px', display: 'flex', justifyContent: 'center' }}>
-            <WheelPicker 
-              value={value} 
-              onChange={onChange} 
-              min={0} 
-              max={isReps ? 50 : 300} 
-              step={isReps ? 1 : 0.5} 
-            />
-          </div>
-        ) : (
-          <>
-            {!isReps && (
-              <div className="numpad-quick-add">
-                <button onClick={() => handleQuickAdd(2.5)}>+2.5</button>
-                <button onClick={() => handleQuickAdd(5)}>+5</button>
-                <button onClick={() => handleQuickAdd(10)}>+10</button>
-              </div>
-            )}
-
-            <div className="numpad-grid">
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
-                <button key={n} onClick={() => handleKey(String(n))}>{n}</button>
-              ))}
-              {!isReps ? (
-                <button onClick={() => handleKey('.')}>.</button>
-              ) : (
-                <button onClick={() => onChange('')} className="numpad-clear">C</button>
-              )}
-              <button onClick={() => handleKey('0')}>0</button>
-              <button onClick={() => handleKey('back')}><Delete size={22} /></button>
+        {/* ОСНОВНАЯ ОБЛАСТЬ (цифры или барабан) — растягивается на оставшееся место */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          {isWheelMode ? (
+            <div style={{ padding: '0 16px', display: 'flex', justifyContent: 'center' }}>
+              <WheelPicker 
+                value={value} 
+                onChange={onChange} 
+                min={0} 
+                max={isReps ? 50 : 300} 
+                step={isReps ? 1 : 0.5} 
+              />
             </div>
-          </>
-        )}
+          ) : (
+            <>
+              {!isReps && (
+                <div className="numpad-quick-add">
+                  <button onClick={() => handleQuickAdd(2.5)}>+2.5</button>
+                  <button onClick={() => handleQuickAdd(5)}>+5</button>
+                  <button onClick={() => handleQuickAdd(10)}>+10</button>
+                </div>
+              )}
+
+              <div className="numpad-grid">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
+                  <button key={n} onClick={() => handleKey(String(n))}>{n}</button>
+                ))}
+                {!isReps ? (
+                  <button onClick={() => handleKey('.')}>.</button>
+                ) : (
+                  <button onClick={() => onChange('')} className="numpad-clear">C</button>
+                )}
+                <button onClick={() => handleKey('0')}>0</button>
+                <button onClick={() => handleKey('back')}><Delete size={22} /></button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
