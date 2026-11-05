@@ -1956,3 +1956,36 @@ h3{font:600 16px/1.3 -apple-system,sans-serif;margin-bottom:6px}
   display: block;
 }
 .wheel-scroll-container::-webkit-scrollbar { display: none; }
+/* Запрещаем выделение текста и контекстное меню на всём приложении */
+html, body, #root, .app-shell {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Разрешаем выделение и вызов меню (вставить/копировать) только в полях ввода */
+input,
+textarea,
+[contenteditable="true"],
+.set-note-input,
+.set-input,
+.field,
+.settings-input,
+.program-note-textarea,
+.ring-setting-input {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+/* На картинках тоже отключаем сохранение по долгому нажатию */
+img {
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  user-select: none;
+}
