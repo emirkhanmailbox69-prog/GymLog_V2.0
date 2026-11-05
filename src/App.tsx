@@ -18,6 +18,10 @@ import { ImageCropper } from './components/ImageCropper';
 import { Numpad } from './components/Numpad';
 import { PlateCalculator } from './components/PlateCalculator';
 import { WeightChart } from './components/WeightChart';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import type { DragEndEvent } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS as DndCSS } from '@dnd-kit/utilities';
 
 const uid = () => crypto.randomUUID();
 const emptySet = (): SetEntry => ({ id: uid(), weight: '', reps: '', done: false });
@@ -153,6 +157,10 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [tab, setTab] = useState<Tab>('home');
   const [toast, setToast] = useState('');
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   // Тренировка
   const [swipedSetId, setSwipedSetId] = useState<string | null>(null);
@@ -1186,12 +1194,13 @@ export default function App() {
             {currentWorkout.exercises.length === 0 && <Empty title="Пока нет упражнений" text="Добавь первое упражнение из библиотеки." />}
                         <DndContext sensors={useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }))} collisionDetection={closestCenter} onDragEnd={handleWorkoutDragEnd}>
               <SortableContext items={currentWorkout.exercises.map(e => e.id)} strategy={verticalListSortingStrategy}>
+                            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleWorkoutDragEnd}>
+              <SortableContext items={currentWorkout.exercises.map(e => e.id)} strategy={verticalListSortingStrategy}>
                 {currentWorkout.exercises.map((exercise, index) => (
                   <SortableWorkoutExercise 
                     key={exercise.id} 
                     exercise={exercise} 
                     index={index} 
-                    currentWorkout={currentWorkout} 
                     patchActive={patchActive} 
                     updateSet={updateSet} 
                     removeSet={removeSet} 
@@ -1270,24 +1279,21 @@ export default function App() {
                   </div>
 
                   <div className="program-day-exercises">
-                    {day.exercises.map(pe => (
-                      <div className="program-day-exercise" key={pe.id}>
-                        <div className="program-exercise-header">
-                          <b>{pe.name}</b>
-                          <button className="icon-button subtle" aria-label="Удалить упражнение" onClick={() => removeExerciseFromProgramDay(day.id, pe.id)}><X size={14} /></button>
-                        </div>
-                        <div className="program-sets">
-                          <div className="program-set-header">
-                            <span>СЕТ</span><span>ВЕС</span><span>ПОВТ</span><span></span>
-                          </div>
-                          {pe.sets.map((s, idx) => (
-                            <div className="program-set-row" key={s.id}>
-                              <span className="set-index">{idx + 1}</span>
-                              <input className="set-input" type="number" inputMode="decimal" min="0" step="0.5" placeholder="—" value={s.weight} onChange={e => updateProgramSet(day.id, pe.id, s.id, { weight: e.target.value })} />
-                              <input className="set-input" type="number" inputMode="numeric" min="0" step="1" placeholder="—" value={s.reps} onChange={e => updateProgramSet(day.id, pe.id, s.id, { reps: e.target.value })} />
-                              <button className="icon-button subtle" aria-label="Удалить подход" onClick={() => removeSetFromProgram(day.id, pe.id, s.id)}><X size={12} /></button>
-                            </div>
-                          ))}
+                                       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(event) => handleProgramDragEnd(day.id, event)}>
+                      <SortableContext items={day.exercises.map(e => e.id)} strategy={verticalListSortingStrategy}>
+                        {day.exercises.map((pe) => (
+                          <SortableProgramExercise 
+                            key={pe.id} 
+                            pe={pe} 
+                            day={day} 
+                            updateProgramSet={updateProgramSet} 
+                            addSetToProgram={addSetToProgram} 
+                            removeSetFromProgram={removeSetFromProgram} 
+                            removeExerciseFromProgramDay={removeExerciseFromProgramDay} 
+                          />
+                        ))}
+                      </SortableContext>
+                    </DndContext>
                           <button className="add-set" onClick={() => addSetToProgram(day.id, pe.id)}>
                             <Plus size={14} /> Добавить подход
                           </button>
@@ -2207,6 +2213,100 @@ function ProgressChart({ points }: { points: { date: number; value: number }[] }
   const pathD = coords.map((c, i) => `${i === 0 ? 'M' : 'L'}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
   const areaD = `${pathD} L${coords[coords.length - 1].x.toFixed(1)},${(pad.top + innerH).toFixed(1)} L${coords[0].x.toFixed(1)},${(pad.top + innerH).toFixed(1)} Z`;
   const fmtShort = (ts: number) => new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' }).format(ts);
+
+  function SortableWorkoutExercise({ exercise, index, patchActive, updateSet, removeSet, toggleNote, setNumpadTarget, openNotes, swipedSetId, setSwipedSetId, touchStartX, setTouchStartX }: any) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: exercise.id });
+  const style = { transform: DndCSS.Transform.toString(transform), transition, zIndex: isDragging ? 2 : 1, position: 'relative' as const };
+
+  return (
+    <article ref={setNodeRef} style={style} className="exercise-card">
+      <div className="exercise-title">
+        <button className="exercise-collapse" onClick={() => patchActive((a: any) => ({ ...a, exercises: a.exercises.map((e: any) => e.id === exercise.id ? { ...e, collapsed: !e.collapsed } : e) }))}>
+          <span className="exercise-number" {...attributes} {...listeners} style={{ cursor: 'grab', touchAction: 'none' }}>
+            {String(index + 1).padStart(2, '0')}
+          </span>
+          <span className="exercise-name">{exercise.name}<small>{exercise.sets.filter((s: any) => s.done).length} из {exercise.sets.length} подходов</small></span>
+          {exercise.collapsed ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
+        </button>
+        <button className="icon-button subtle" aria-label="Удалить" onClick={() => patchActive((a: any) => ({ ...a, exercises: a.exercises.filter((e: any) => e.id !== exercise.id) }))}><X size={17} /></button>
+      </div>
+      {!exercise.collapsed && <div className="sets">
+        <div className="set-header"><span>СЕТ</span><span>ВЕС, КГ</span><span>ПОВТОРЫ</span><span></span><span>✓</span></div>
+        {exercise.sets.map((set: any, i: number) => {
+          const noteKey = `${exercise.id}-${set.id}`;
+          const showNote = openNotes[noteKey] || Boolean(set.note && set.note.trim());
+          const prevSet = i > 0 ? exercise.sets[i - 1] : null;
+          const isEmptySet = !set.weight && !set.reps;
+          const canCopy = Boolean(prevSet && isEmptySet && (prevSet.weight || prevSet.reps));
+          return (
+            <div key={set.id} style={{ position: 'relative', overflow: 'hidden', borderRadius: '12px', marginBottom: '8px', background: swipedSetId === set.id ? '#ff6482' : 'transparent', transition: 'background 0.2s' }}>
+              <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: '70px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <button style={{ background: 'transparent', border: 'none', color: 'white', width: '100%', height: '100%' }} onClick={() => { removeSet(exercise.id, set.id); setSwipedSetId(null); }}>
+                  <Trash2 size={20} />
+                </button>
+              </div>
+              <div style={{ position: 'relative', zIndex: 1, background: 'var(--bg)', transform: swipedSetId === set.id ? 'translateX(-70px)' : 'translateX(0)', transition: 'transform 0.2s ease-out', borderRadius: '12px' }}
+                onTouchStart={(e) => setTouchStartX(e.touches[0].clientX)}
+                onTouchEnd={(e) => { const diff = touchStartX - e.changedTouches[0].clientX; if (diff > 40) setSwipedSetId(set.id); else if (diff < -40) setSwipedSetId(null); }}
+              >
+                <div className={`set-row ${set.done ? 'set-done' : ''}`} style={{ margin: 0 }}>
+                  {canCopy ? (
+                    <button className="set-copy" aria-label="Копировать" onClick={() => prevSet && updateSet(exercise.id, set.id, { weight: prevSet.weight, reps: prevSet.reps })}><Copy size={13} /></button>
+                  ) : (<span className="set-index">{i + 1}</span>)}
+                  <input aria-label={`Вес ${i + 1}`} className="set-input" type="text" inputMode="none" readOnly placeholder="—" value={set.weight} onClick={() => setNumpadTarget({ exId: exercise.id, setId: set.id, field: 'weight' })} />
+                  <input aria-label={`Повторы ${i + 1}`} className="set-input" type="text" inputMode="none" readOnly placeholder="—" value={set.reps} onClick={() => setNumpadTarget({ exId: exercise.id, setId: set.id, field: 'reps' })} />
+                  <button className={`set-note-toggle ${set.note && set.note.trim() ? 'has-note' : ''}`} aria-label="Заметка" onClick={() => toggleNote(exercise.id, set.id)}><MessageSquare size={14} /></button>
+                  <button className={`set-check ${set.done ? 'checked' : ''}`} aria-label="Выполнено" onClick={() => updateSet(exercise.id, set.id, { done: !set.done })}>{set.done && <Check size={16} />}</button>
+                </div>
+                {showNote && (
+                  <div style={{ padding: '0 12px 12px 12px' }}>
+                    <input className="set-note-input" placeholder="Заметка к подходу" value={set.note || ''} onChange={e => updateSet(exercise.id, set.id, { note: e.target.value })} style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '10px 12px', color: 'var(--text)', outline: 'none', fontSize: '14px', marginTop: '8px' }} />
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        <button className="add-set" onClick={() => patchActive((a: any) => ({ ...a, exercises: a.exercises.map((e: any) => e.id === exercise.id ? { ...e, sets: [...e.sets, emptySet()] } : e) }))}><Plus size={15} /> Добавить подход</button>
+      </div>}
+    </article>
+  );
+}
+
+function SortableProgramExercise({ pe, day, updateProgramSet, addSetToProgram, removeSetFromProgram, removeExerciseFromProgramDay }: any) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: pe.id });
+  const style = { transform: DndCSS.Transform.toString(transform), transition, zIndex: isDragging ? 2 : 1, position: 'relative' as const };
+
+  return (
+    <div ref={setNodeRef} style={style} className="program-day-exercise">
+      <div className="program-exercise-header">
+        <b>{pe.name}</b>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span {...attributes} {...listeners} style={{ cursor: 'grab', touchAction: 'none', display: 'flex', alignItems: 'center', color: 'var(--muted)' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg>
+          </span>
+          <button className="icon-button subtle" aria-label="Удалить упражнение" onClick={() => removeExerciseFromProgramDay(day.id, pe.id)}><X size={14} /></button>
+        </div>
+      </div>
+      <div className="program-sets">
+        <div className="program-set-header">
+          <span>СЕТ</span><span>ВЕС</span><span>ПОВТ</span><span></span>
+        </div>
+        {pe.sets.map((s: any, idx: number) => (
+          <div className="program-set-row" key={s.id}>
+            <span className="set-index">{idx + 1}</span>
+            <input className="set-input" type="number" inputMode="decimal" min="0" step="0.5" placeholder="—" value={s.weight} onChange={e => updateProgramSet(day.id, pe.id, s.id, { weight: e.target.value })} />
+            <input className="set-input" type="number" inputMode="numeric" min="0" step="1" placeholder="—" value={s.reps} onChange={e => updateProgramSet(day.id, pe.id, s.id, { reps: e.target.value })} />
+            <button className="icon-button subtle" aria-label="Удалить подход" onClick={() => removeSetFromProgram(day.id, pe.id, s.id)}><X size={12} /></button>
+          </div>
+        ))}
+        <button className="add-set" onClick={() => addSetToProgram(day.id, pe.id)}>
+          <Plus size={14} /> Добавить подход
+        </button>
+      </div>
+    </div>
+  );
+}
 
   return (
     <div className="progress-chart-wrap">
