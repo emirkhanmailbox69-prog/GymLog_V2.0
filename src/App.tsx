@@ -1192,9 +1192,7 @@ export default function App() {
             <label className="field-label">Название тренировки<input className="field" value={currentWorkout.name} onChange={e => patchActive(a => ({ ...a, name: e.target.value }))} maxLength={60} /></label>
             <div className="section-heading"><h2>Упражнения</h2><button className="icon-button" onClick={() => openPickerForWorkout()} aria-label="Добавить"><Plus size={20} /></button></div>
             {currentWorkout.exercises.length === 0 && <Empty title="Пока нет упражнений" text="Добавь первое упражнение из библиотеки." />}
-                        <DndContext sensors={useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }))} collisionDetection={closestCenter} onDragEnd={handleWorkoutDragEnd}>
-              <SortableContext items={currentWorkout.exercises.map(e => e.id)} strategy={verticalListSortingStrategy}>
-                            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleWorkoutDragEnd}>
+                                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleWorkoutDragEnd}>
               <SortableContext items={currentWorkout.exercises.map(e => e.id)} strategy={verticalListSortingStrategy}>
                 {currentWorkout.exercises.map((exercise, index) => (
                   <SortableWorkoutExercise 
@@ -1293,13 +1291,7 @@ export default function App() {
                           />
                         ))}
                       </SortableContext>
-                    </DndContext>
-                          <button className="add-set" onClick={() => addSetToProgram(day.id, pe.id)}>
-                            <Plus size={14} /> Добавить подход
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                                        </DndContext>
 
                     <button className="add-set" onClick={() => openPickerForProgramDay(day.id)}>
                       <Plus size={15} /> Добавить упражнение
@@ -2214,6 +2206,24 @@ function ProgressChart({ points }: { points: { date: number; value: number }[] }
   const areaD = `${pathD} L${coords[coords.length - 1].x.toFixed(1)},${(pad.top + innerH).toFixed(1)} L${coords[0].x.toFixed(1)},${(pad.top + innerH).toFixed(1)} Z`;
   const fmtShort = (ts: number) => new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' }).format(ts);
 
+  return (
+    <div className="progress-chart-wrap">
+      <svg viewBox={`0 0 ${W} ${H}`} className="progress-chart" aria-hidden="true">
+        <defs><linearGradient id="chartAreaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="rgb(208,244,119)" stopOpacity="0.35" /><stop offset="100%" stopColor="rgb(208,244,119)" stopOpacity="0" /></linearGradient></defs>
+        <text x={pad.left - 8} y={pad.top + 4} textAnchor="end" className="chart-label">{Math.round(maxV)} кг</text>
+        <text x={pad.left - 8} y={pad.top + innerH} textAnchor="end" className="chart-label">{Math.round(minV)} кг</text>
+        <line x1={pad.left} y1={pad.top} x2={pad.left} y2={pad.top + innerH} stroke="rgba(255,255,255,.08)" />
+        <line x1={pad.left} y1={pad.top + innerH} x2={pad.left + innerW} y2={pad.top + innerH} stroke="rgba(255,255,255,.08)" />
+        <line x1={pad.left} y1={pad.top + innerH / 2} x2={pad.left + innerW} y2={pad.top + innerH / 2} stroke="rgba(255,255,255,.05)" strokeDasharray="2 4" />
+        <path d={areaD} fill="url(#chartAreaGradient)" />
+        <path d={pathD} fill="none" stroke="var(--lime)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+        {coords.map((c, i) => <circle key={i} cx={c.x} cy={c.y} r={4} fill="var(--lime)" />)}
+        <text x={coords[0].x} y={H - 10} textAnchor="start" className="chart-label">{fmtShort(coords[0].date)}</text>
+        <text x={coords[coords.length - 1].x} y={H - 10} textAnchor="end" className="chart-label">{fmtShort(coords[coords.length - 1].date)}</text>
+      </svg>
+    </div>
+  );
+}
   function SortableWorkoutExercise({ exercise, index, patchActive, updateSet, removeSet, toggleNote, setNumpadTarget, openNotes, swipedSetId, setSwipedSetId, touchStartX, setTouchStartX }: any) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: exercise.id });
   const style = { transform: DndCSS.Transform.toString(transform), transition, zIndex: isDragging ? 2 : 1, position: 'relative' as const };
@@ -2304,25 +2314,6 @@ function SortableProgramExercise({ pe, day, updateProgramSet, addSetToProgram, r
           <Plus size={14} /> Добавить подход
         </button>
       </div>
-    </div>
-  );
-}
-
-  return (
-    <div className="progress-chart-wrap">
-      <svg viewBox={`0 0 ${W} ${H}`} className="progress-chart" aria-hidden="true">
-        <defs><linearGradient id="chartAreaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="rgb(208,244,119)" stopOpacity="0.35" /><stop offset="100%" stopColor="rgb(208,244,119)" stopOpacity="0" /></linearGradient></defs>
-        <text x={pad.left - 8} y={pad.top + 4} textAnchor="end" className="chart-label">{Math.round(maxV)} кг</text>
-        <text x={pad.left - 8} y={pad.top + innerH} textAnchor="end" className="chart-label">{Math.round(minV)} кг</text>
-        <line x1={pad.left} y1={pad.top} x2={pad.left} y2={pad.top + innerH} stroke="rgba(255,255,255,.08)" />
-        <line x1={pad.left} y1={pad.top + innerH} x2={pad.left + innerW} y2={pad.top + innerH} stroke="rgba(255,255,255,.08)" />
-        <line x1={pad.left} y1={pad.top + innerH / 2} x2={pad.left + innerW} y2={pad.top + innerH / 2} stroke="rgba(255,255,255,.05)" strokeDasharray="2 4" />
-        <path d={areaD} fill="url(#chartAreaGradient)" />
-        <path d={pathD} fill="none" stroke="var(--lime)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
-        {coords.map((c, i) => <circle key={i} cx={c.x} cy={c.y} r={4} fill="var(--lime)" />)}
-        <text x={coords[0].x} y={H - 10} textAnchor="start" className="chart-label">{fmtShort(coords[0].date)}</text>
-        <text x={coords[coords.length - 1].x} y={H - 10} textAnchor="end" className="chart-label">{fmtShort(coords[coords.length - 1].date)}</text>
-      </svg>
     </div>
   );
 }
