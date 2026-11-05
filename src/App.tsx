@@ -48,7 +48,7 @@ const volume = (w: { exercises: WorkoutExercise[] }) => w.exercises.reduce((n, e
 const totalXp = (workouts: Workout[]) => workouts.reduce((sum, w) => sum + w.earnedXp, 0);
 const xpFor = (w: ActiveWorkout) => {
   const done = setCount(w);
-  return done === 0 ? 0 : Math.min(100, 20 + done * 5 + Math.min(20, w.exercises.length * 2));
+  return done === 0 ? 0 : 20 + done * 5 + Math.min(20, w.exercises.length * 2);
 };
 
 const getLevelInfo = (totalXp: number) => {
