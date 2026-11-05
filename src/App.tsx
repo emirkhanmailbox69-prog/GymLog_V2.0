@@ -157,6 +157,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [tab, setTab] = useState<Tab>('home');
   const [toast, setToast] = useState('');
+  
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -212,7 +213,8 @@ export default function App() {
   const [passwordValue, setPasswordValue] = useState('');
   const [emailAuthLoading, setEmailAuthLoading] = useState(false);
   const [emailAuthError, setEmailAuthError] = useState<string | null>(null);
-    // Кастомная панель и калькулятор
+  
+  // Кастомная панель и калькулятор
   const [numpadTarget, setNumpadTarget] = useState<{ exId: string; setId: string; field: 'weight' | 'reps' } | null>(null);
   const [plateCalcTarget, setPlateCalcTarget] = useState<{ exId: string; setId: string; currentWeight: string } | null>(null);
 
@@ -260,7 +262,7 @@ export default function App() {
     if (!saveState(state)) notify('Не удалось сохранить локально. Экспортируй резервную копию.');
   }, [state]);
 
-    useEffect(() => {
+  useEffect(() => {
     if (profileView === 'instructions') {
       window.scrollTo({ top: 0, behavior: 'instant' });
     }
@@ -613,7 +615,7 @@ export default function App() {
     setState(s => s.activeWorkout ? { ...s, activeWorkout: updater(s.activeWorkout) } : s);
   }
 
-    function handleWorkoutDragEnd(event: DragEndEvent) {
+  function handleWorkoutDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     patchActive(a => {
@@ -646,7 +648,7 @@ export default function App() {
     patchActive(a => ({ ...a, exercises: a.exercises.map(e => e.id !== exerciseId ? e : { ...e, sets: e.sets.map(s => s.id === setId ? { ...s, ...patch } : s) }) }));
   }
 
-    function removeSet(exerciseId: string, setId: string) {
+  function removeSet(exerciseId: string, setId: string) {
     patchActive(a => ({
       ...a,
       exercises: a.exercises.map(e => e.id === exerciseId ? { ...e, sets: e.sets.filter(s => s.id !== setId) } : e)
@@ -786,7 +788,7 @@ export default function App() {
     setProgramDays(prev => prev.map(d => d.id === dayId ? { ...d, ...patch } : d));
   }
 
-    function handleProgramDragEnd(dayId: string, event: DragEndEvent) {
+  function handleProgramDragEnd(dayId: string, event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     setProgramDays(prev => prev.map(d => {
@@ -854,7 +856,7 @@ export default function App() {
     cancelProgramEdit();
   }
 
-   function makeWorkoutFromProgramDay(day: ProgramDay): WorkoutExercise[] {
+  function makeWorkoutFromProgramDay(day: ProgramDay): WorkoutExercise[] {
     return day.exercises.map(pe => ({
       id: uid(),
       exerciseId: pe.exerciseId,
@@ -866,8 +868,8 @@ export default function App() {
     }));
   }
 
-    function startWorkoutFromProgram(program: Program, day: ProgramDay) {
-    const exercises = makeWorkoutFromProgramDay(day); // <--- вот тут убрали program
+  function startWorkoutFromProgram(program: Program, day: ProgramDay) {
+    const exercises = makeWorkoutFromProgramDay(day);
     setState(s => ({ ...s, activeWorkout: {
       id: uid(),
       name: program.days.length > 1 ? `${program.name} · ${day.name}` : program.name,
@@ -969,7 +971,7 @@ export default function App() {
     reader.readAsText(file);
   }
 
-            function updateProfile(name: string, bodyWeight: string) {
+  function updateProfile(name: string, bodyWeight: string) {
     setState(s => {
       const newState = { ...s, profile: { ...s.profile, name, bodyWeight } };
       const numWeight = parseFloat(bodyWeight.replace(',', '.'));
@@ -1143,16 +1145,16 @@ export default function App() {
           {!currentWorkout && state.workouts.length > 0 && (
             <div className="quick-start">
               <button className="quick-start-btn" onClick={() => startFromWorkout(state.workouts[0])}>
-  <RefreshCw size={18} style={{ flexShrink: 0 }} />
-  <div style={{ minWidth: 0, flex: 1, textAlign: 'left' }}>
-    <b>Повторить последнюю</b>
-    <small style={{ display: 'block', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, marginTop: 2 }}>
-      {state.workouts[0].name} · {localDate(state.workouts[0].endedAt)} · {setCount(state.workouts[0])} подходов
-    </small>
-  </div>
-</button>
+                <RefreshCw size={18} style={{ flexShrink: 0 }} />
+                <div style={{ minWidth: 0, flex: 1, textAlign: 'left' }}>
+                  <b>Повторить последнюю</b>
+                  <small style={{ display: 'block', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3, marginTop: 2 }}>
+                    {state.workouts[0].name} · {localDate(state.workouts[0].endedAt)} · {setCount(state.workouts[0])} подходов
+                  </small>
+                </div>
+              </button>
               <button className="quick-start-btn" onClick={() => setHistoryPickerOpen(true)}>
-                <History size={18} />
+                <History size={18} style={{ flexShrink: 0 }} />
                 <div><b>Из истории</b><small>выбрать любую тренировку</small></div>
               </button>
             </div>
@@ -1192,7 +1194,8 @@ export default function App() {
             <label className="field-label">Название тренировки<input className="field" value={currentWorkout.name} onChange={e => patchActive(a => ({ ...a, name: e.target.value }))} maxLength={60} /></label>
             <div className="section-heading"><h2>Упражнения</h2><button className="icon-button" onClick={() => openPickerForWorkout()} aria-label="Добавить"><Plus size={20} /></button></div>
             {currentWorkout.exercises.length === 0 && <Empty title="Пока нет упражнений" text="Добавь первое упражнение из библиотеки." />}
-                                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleWorkoutDragEnd}>
+            
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleWorkoutDragEnd}>
               <SortableContext items={currentWorkout.exercises.map(e => e.id)} strategy={verticalListSortingStrategy}>
                 {currentWorkout.exercises.map((exercise, index) => (
                   <SortableWorkoutExercise 
@@ -1213,6 +1216,7 @@ export default function App() {
                 ))}
               </SortableContext>
             </DndContext>
+
             <button className="button button-secondary full-width" onClick={() => openPickerForWorkout()}><Plus size={17} /> Добавить упражнение</button>
             <div className="finish-bar"><div><b>{setCount(currentWorkout)}</b><small>выполнено подходов</small></div><button className={`button button-primary ${finishing ? 'is-finishing' : ''}`} onClick={finishWorkout} disabled={finishing}>{finishing ? 'Сохраняем…' : <>Завершить <Check size={17} /></>}</button></div>
             <button className="text-danger" onClick={() => { if (window.confirm('Отменить тренировку?')) { setState(s => ({ ...s, activeWorkout: null })); notify('Отменена.'); } }}>Отменить тренировку</button>
@@ -1277,7 +1281,7 @@ export default function App() {
                   </div>
 
                   <div className="program-day-exercises">
-                                       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(event) => handleProgramDragEnd(day.id, event)}>
+                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(event) => handleProgramDragEnd(day.id, event)}>
                       <SortableContext items={day.exercises.map(e => e.id)} strategy={verticalListSortingStrategy}>
                         {day.exercises.map((pe) => (
                           <SortableProgramExercise 
@@ -1291,7 +1295,7 @@ export default function App() {
                           />
                         ))}
                       </SortableContext>
-                                        </DndContext>
+                    </DndContext>
 
                     <button className="add-set" onClick={() => openPickerForProgramDay(day.id)}>
                       <Plus size={15} /> Добавить упражнение
@@ -1649,7 +1653,7 @@ export default function App() {
               {state.profile.avatar && (<button className="profile-avatar-remove" onClick={removeAvatar}>Удалить фото</button>)}
             </div>
           </div>
-                    <div className="settings-section">
+          <div className="settings-section">
             <p className="settings-header">Личные данные</p>
             <div className="settings-group">
               <label className="settings-row-input">
@@ -1678,7 +1682,7 @@ export default function App() {
             </div>
           </div>
 
-            {state.measurements.length > 0 && (
+          {state.measurements.length > 0 && (
             <div className="settings-section">
               <p className="settings-header">Динамика веса (кг)</p>
               <div className="settings-group" style={{ padding: '10px 0' }}>
@@ -1889,7 +1893,7 @@ export default function App() {
         </div>
       )}
 
-            {numpadTarget && (
+      {numpadTarget && (
         <Numpad
           value={
             numpadTarget.field === 'weight' 
@@ -1931,103 +1935,6 @@ export default function App() {
         />
       )}
       {toast && <div className="toast" role="status">{toast}</div>}
-    </div>
-  );
-}
-
-// Компонент для перетаскивания в активной тренировке
-function SortableWorkoutExercise({ exercise, index, currentWorkout, patchActive, updateSet, removeSet, toggleNote, setNumpadTarget, openNotes, swipedSetId, setSwipedSetId, touchStartX, setTouchStartX }: any) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: exercise.id });
-  const style = { transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 2 : 1, position: 'relative' as const };
-  const noteKey = `${exercise.id}-${index}`; // noteKey используется для заметок, но он внутри map ниже. Оставим как было.
-
-  return (
-    <article ref={setNodeRef} style={style} className="exercise-card">
-      <div className="exercise-title">
-        <button className="exercise-collapse" onClick={() => patchActive(a => ({ ...a, exercises: a.exercises.map(e => e.id === exercise.id ? { ...e, collapsed: !e.collapsed } : e) }))}>
-          <span className="exercise-number" {...attributes} {...listeners} style={{ cursor: 'grab', touchAction: 'none' }}>
-            {String(index + 1).padStart(2, '0')}
-          </span>
-          <span className="exercise-name">{exercise.name}<small>{exercise.sets.filter((s: any) => s.done).length} из {exercise.sets.length} подходов</small></span>
-          {exercise.collapsed ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
-        </button>
-        <button className="icon-button subtle" aria-label="Удалить" onClick={() => patchActive(a => ({ ...a, exercises: a.exercises.filter(e => e.id !== exercise.id) }))}><X size={17} /></button>
-      </div>
-      {!exercise.collapsed && <div className="sets">
-        <div className="set-header"><span>СЕТ</span><span>ВЕС, КГ</span><span>ПОВТОРЫ</span><span></span><span>✓</span></div>
-        {exercise.sets.map((set: any, i: number) => {
-          const noteKey = `${exercise.id}-${set.id}`;
-          const showNote = openNotes[noteKey] || Boolean(set.note && set.note.trim());
-          const prevSet = i > 0 ? exercise.sets[i - 1] : null;
-          const isEmptySet = !set.weight && !set.reps;
-          const canCopy = Boolean(prevSet && isEmptySet && (prevSet.weight || prevSet.reps));
-          return (
-            <div key={set.id} style={{ position: 'relative', overflow: 'hidden', borderRadius: '12px', marginBottom: '8px', background: swipedSetId === set.id ? '#ff6482' : 'transparent', transition: 'background 0.2s' }}>
-              <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: '70px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <button style={{ background: 'transparent', border: 'none', color: 'white', width: '100%', height: '100%' }} onClick={() => { removeSet(exercise.id, set.id); setSwipedSetId(null); }}>
-                  <Trash2 size={20} />
-                </button>
-              </div>
-              <div style={{ position: 'relative', zIndex: 1, background: 'var(--bg)', transform: swipedSetId === set.id ? 'translateX(-70px)' : 'translateX(0)', transition: 'transform 0.2s ease-out', borderRadius: '12px' }}
-                onTouchStart={(e) => setTouchStartX(e.touches[0].clientX)}
-                onTouchEnd={(e) => { const diff = touchStartX - e.changedTouches[0].clientX; if (diff > 40) setSwipedSetId(set.id); else if (diff < -40) setSwipedSetId(null); }}
-              >
-                <div className={`set-row ${set.done ? 'set-done' : ''}`} style={{ margin: 0 }}>
-                  {canCopy ? (
-                    <button className="set-copy" aria-label="Копировать" onClick={() => prevSet && updateSet(exercise.id, set.id, { weight: prevSet.weight, reps: prevSet.reps })}><Copy size={13} /></button>
-                  ) : (<span className="set-index">{i + 1}</span>)}
-                  <input aria-label={`Вес ${i + 1}`} className="set-input" type="text" inputMode="none" readOnly placeholder="—" value={set.weight} onClick={() => setNumpadTarget({ exId: exercise.id, setId: set.id, field: 'weight' })} />
-                  <input aria-label={`Повторы ${i + 1}`} className="set-input" type="text" inputMode="none" readOnly placeholder="—" value={set.reps} onClick={() => setNumpadTarget({ exId: exercise.id, setId: set.id, field: 'reps' })} />
-                  <button className={`set-note-toggle ${set.note && set.note.trim() ? 'has-note' : ''}`} aria-label="Заметка" onClick={() => toggleNote(exercise.id, set.id)}><MessageSquare size={14} /></button>
-                  <button className={`set-check ${set.done ? 'checked' : ''}`} aria-label="Выполнено" onClick={() => updateSet(exercise.id, set.id, { done: !set.done })}>{set.done && <Check size={16} />}</button>
-                </div>
-                {showNote && (
-                  <div style={{ padding: '0 12px 12px 12px' }}>
-                    <input className="set-note-input" placeholder="Заметка к подходу" value={set.note || ''} onChange={e => updateSet(exercise.id, set.id, { note: e.target.value })} style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '10px 12px', color: 'var(--text)', outline: 'none', fontSize: '14px', marginTop: '8px' }} />
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-        <button className="add-set" onClick={() => patchActive(a => ({ ...a, exercises: a.exercises.map(e => e.id === exercise.id ? { ...e, sets: [...e.sets, emptySet()] } : e) }))}><Plus size={15} /> Добавить подход</button>
-      </div>}
-    </article>
-  );
-}
-
-// Компонент для перетаскивания в билдере программ
-function SortableProgramExercise({ pe, day, dayIdx, setProgramDays, updateProgramSet, addSetToProgram, removeSetFromProgram, removeExerciseFromProgramDay }: any) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: pe.id });
-  const style = { transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 2 : 1, position: 'relative' as const };
-
-  return (
-    <div ref={setNodeRef} style={style} className="program-day-exercise">
-      <div className="program-exercise-header">
-        <b>{pe.name}</b>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <span {...attributes} {...listeners} style={{ cursor: 'grab', touchAction: 'none', display: 'flex', alignItems: 'center', color: 'var(--muted)' }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg>
-          </span>
-          <button className="icon-button subtle" aria-label="Удалить упражнение" onClick={() => removeExerciseFromProgramDay(day.id, pe.id)}><X size={14} /></button>
-        </div>
-      </div>
-      <div className="program-sets">
-        <div className="program-set-header">
-          <span>СЕТ</span><span>ВЕС</span><span>ПОВТ</span><span></span>
-        </div>
-        {pe.sets.map((s: any, idx: number) => (
-          <div className="program-set-row" key={s.id}>
-            <span className="set-index">{idx + 1}</span>
-            <input className="set-input" type="number" inputMode="decimal" min="0" step="0.5" placeholder="—" value={s.weight} onChange={e => updateProgramSet(day.id, pe.id, s.id, { weight: e.target.value })} />
-            <input className="set-input" type="number" inputMode="numeric" min="0" step="1" placeholder="—" value={s.reps} onChange={e => updateProgramSet(day.id, pe.id, s.id, { reps: e.target.value })} />
-            <button className="icon-button subtle" aria-label="Удалить подход" onClick={() => removeSetFromProgram(day.id, pe.id, s.id)}><X size={12} /></button>
-          </div>
-        ))}
-        <button className="add-set" onClick={() => addSetToProgram(day.id, pe.id)}>
-          <Plus size={14} /> Добавить подход
-        </button>
-      </div>
     </div>
   );
 }
@@ -2224,7 +2131,8 @@ function ProgressChart({ points }: { points: { date: number; value: number }[] }
     </div>
   );
 }
-  function SortableWorkoutExercise({ exercise, index, patchActive, updateSet, removeSet, toggleNote, setNumpadTarget, openNotes, swipedSetId, setSwipedSetId, touchStartX, setTouchStartX }: any) {
+
+function SortableWorkoutExercise({ exercise, index, patchActive, updateSet, removeSet, toggleNote, setNumpadTarget, openNotes, swipedSetId, setSwipedSetId, touchStartX, setTouchStartX }: any) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: exercise.id });
   const style = { transform: DndCSS.Transform.toString(transform), transition, zIndex: isDragging ? 2 : 1, position: 'relative' as const };
 
