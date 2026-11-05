@@ -199,6 +199,7 @@ export default function App() {
   const [programGoal, setProgramGoal] = useState<ProgramGoal | ''>('');
   const [programDays, setProgramDays] = useState<ProgramDay[]>([]);
   const [programPickerOpen, setProgramPickerOpen] = useState<Program | null>(null);
+  const [collapsedProgramExercises, setCollapsedProgramExercises] = useState<Record<string, boolean>>({});
   
   // Библиотека
   const [exerciseName, setExerciseName] = useState('');
@@ -1285,14 +1286,16 @@ export default function App() {
                       <SortableContext items={day.exercises.map(e => e.id)} strategy={verticalListSortingStrategy}>
                         {day.exercises.map((pe) => (
                           <SortableProgramExercise 
-                            key={pe.id} 
-                            pe={pe} 
-                            day={day} 
-                            updateProgramSet={updateProgramSet} 
-                            addSetToProgram={addSetToProgram} 
-                            removeSetFromProgram={removeSetFromProgram} 
-                            removeExerciseFromProgramDay={removeExerciseFromProgramDay} 
-                          />
+  key={pe.id} 
+  pe={pe} 
+  day={day} 
+  isCollapsed={Boolean(collapsedProgramExercises[pe.id])}
+  onToggleCollapse={() => setCollapsedProgramExercises(prev => ({ ...prev, [pe.id]: !prev[pe.id] }))}
+  updateProgramSet={updateProgramSet} 
+  addSetToProgram={addSetToProgram} 
+  removeSetFromProgram={removeSetFromProgram} 
+  removeExerciseFromProgramDay={removeExerciseFromProgramDay} 
+/>
                         ))}
                       </SortableContext>
                     </DndContext>
@@ -2191,22 +2194,28 @@ function SortableWorkoutExercise({ exercise, index, patchActive, updateSet, remo
   );
 }
 
-function SortableProgramExercise({ pe, day, updateProgramSet, addSetToProgram, removeSetFromProgram, removeExerciseFromProgramDay }: any) {
+function SortableProgramExercise({ pe, day, isCollapsed, onToggleCollapse, updateProgramSet, addSetToProgram, removeSetFromProgram, removeExerciseFromProgramDay }: any) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: pe.id });
   const style = { transform: DndCSS.Transform.toString(transform), transition, zIndex: isDragging ? 2 : 1, position: 'relative' as const };
 
   return (
     <div ref={setNodeRef} style={style} className="program-day-exercise">
       <div className="program-exercise-header">
-        <b>{pe.name}</b>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <span {...attributes} {...listeners} style={{ cursor: 'grab', touchAction: 'none', display: 'flex', alignItems: 'center', color: 'var(--muted)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+          <span {...attributes} {...listeners} style={{ cursor: 'grab', touchAction: 'none', display: 'flex', alignItems: 'center', color: 'var(--muted)', flexShrink: 0 }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg>
           </span>
+          <b style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pe.name}</b>
+          <small style={{ color: 'var(--muted)', flexShrink: 0 }}>{pe.sets.length} подх.</small>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+          <button className="icon-button subtle" aria-label={isCollapsed ? 'Развернуть' : 'Свернуть'} onClick={onToggleCollapse}>
+            {isCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+          </button>
           <button className="icon-button subtle" aria-label="Удалить упражнение" onClick={() => removeExerciseFromProgramDay(day.id, pe.id)}><X size={14} /></button>
         </div>
       </div>
-      <div className="program-sets">
+      {!isCollapsed && <div className="program-sets">
         <div className="program-set-header">
           <span>СЕТ</span><span>ВЕС</span><span>ПОВТ</span><span></span>
         </div>
@@ -2221,7 +2230,7 @@ function SortableProgramExercise({ pe, day, updateProgramSet, addSetToProgram, r
         <button className="add-set" onClick={() => addSetToProgram(day.id, pe.id)}>
           <Plus size={14} /> Добавить подход
         </button>
-      </div>
+      </div>}
     </div>
   );
 }
